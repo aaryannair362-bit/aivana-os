@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIVANA OPD Scribe - Doctor</title>
+    <style>
+        /* (all existing styles – keep unchanged) */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e2e8f0; min-height: 100vh; }
+        .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #111827; border-bottom: 1px solid #1e293b; flex-wrap: wrap; gap: 10px; }
+        .app-header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #22d3ee, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .header-right span { font-size: 12px; color: #94a3b8; }
+        .app-main { display: flex; flex: 1; }
+        .sidebar { width: 180px; background: #0f172a; border-right: 1px solid #1e293b; padding: 12px 0; }
+        .sidebar button { display: block; width: 100%; padding: 12px 20px; background: transparent; border: none; color: #94a3b8; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.2s; }
+        .sidebar button:hover { background: #1e293b; color: #e2e8f0; }
+        .sidebar button.active { background: #1e293b; color: #22d3ee; border-right: 2px solid #22d3ee; }
+        .content { flex: 1; padding: 20px; overflow-y: auto; max-height: calc(100vh - 80px); }
+        .view { display: none; }
+        .view.active { display: block; }
+
+        .control-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .control-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
+        .control-bar select { padding: 6px 10px; background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
+        .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .preset-btn { padding: 6px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 20px; color: #94a3b8; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+        .preset-btn:hover { background: #2d3748; color: #e2e8f0; border-color: #06b6d4; }
+
+        .btn-primary { padding: 8px 20px; background: linear-gradient(135deg, #06b6d4, #0891b2); border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-secondary { padding: 6px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 12px; cursor: pointer; }
+        .btn-secondary:hover { background: #2d3748; }
+        .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid #334155; border-radius: 8px; color: #94a3b8; font-size: 12px; cursor: pointer; }
+        .btn-outline:hover { border-color: #64748b; color: #e2e8f0; }
+        .btn-danger { padding: 6px 14px; background: #dc2626; border: none; border-radius: 8px; color: white; cursor: pointer; }
+
+        #transcript-input { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; color: #e2e8f0; font-family: monospace; font-size: 13px; resize: vertical; min-height: 80px; outline: none; margin-bottom: 8px; }
+        #transcript-input:focus { border-color: #06b6d4; }
+        #analysis-status { font-size: 13px; color: #22d3ee; min-height: 24px; margin: 8px 0; }
+
+        .prescription-draft { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin-top: 16px; }
+        .prescription-draft h2 { font-size: 18px; margin-bottom: 12px; }
+        .draft-fields > div { margin-bottom: 12px; }
+        .draft-fields label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; }
+        .draft-fields textarea, .draft-fields input { width: 100%; padding: 8px 12px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 13px; outline: none; }
+        .draft-fields textarea:focus, .draft-fields input:focus { border-color: #06b6d4; }
+        .draft-fields textarea { min-height: 50px; resize: vertical; font-family: inherit; }
+
+        .medication-item, .lab-item { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 4px; margin-bottom: 4px; }
+        .medication-item button, .lab-item button { background: none; border: none; color: #f87171; cursor: pointer; font-size: 16px; margin-left: auto; }
+        .medication-add, .lab-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+        .medication-add input, .lab-add input { flex: 1; min-width: 80px; padding: 6px 10px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
+        .medication-add select { padding: 6px 10px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
+
+        #history-list { display: flex; flex-direction: column; gap: 8px; }
+        .history-item { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: border-color 0.2s; }
+        .history-item:hover { border-color: #06b6d4; }
+
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .metric-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; text-align: center; }
+        .metric-label { display: block; font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+        .metric-value { font-family: monospace; font-size: 22px; font-weight: 700; color: #22d3ee; }
+        #case-logs { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; overflow-x: auto; }
+        #case-logs table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        #case-logs th { text-align: left; padding: 6px 10px; color: #64748b; font-weight: 600; border-bottom: 1px solid #1e293b; }
+        #case-logs td { padding: 6px 10px; border-bottom: 1px solid #0a0e17; }
+
+        .ipd-patient-list { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+        .ipd-patient-card { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .ipd-patient-card .info h3 { font-size: 16px; margin-bottom: 2px; }
+        .ipd-patient-card .info .meta { font-size: 12px; color: #94a3b8; }
+        .ipd-patient-card .actions { display: flex; gap: 8px; }
+
+        @media (max-width: 768px) {
+            .app-main { flex-direction: column; }
+            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #1e293b; display: flex; overflow-x: auto; }
+            .sidebar button { display: inline-block; width: auto; white-space: nowrap; }
+            .control-bar { flex-direction: column; align-items: stretch; }
+            .header-right { width: 100%; justify-content: flex-start; }
+        }
+    </style>
+</head>
+<body>
+<div id="app">
+    <header class="app-header">
+        <h1>🏥 AIVANA OPD Scribe</h1>
+        <div class="header-right">
+            <span id="groq-status">🔄 Checking...</span>
+            <span id="user-email" style="color:#e2e8f0;"></span>
+            <button id="logout-btn" class="btn-outline">Logout</button>
+        </div>
+    </header>
+    <main class="app-main">
+        <aside class="sidebar">
+            <button class="active" data-view="scribe">📝 Scribe</button>
+            <button data-view="history">📋 History</button>
+            <button data-view="observability">📊 Metrics</button>
+            <button data-view="ipd-patients">🛏️ IPD Patients</button>
+        </aside>
+        <section class="content">
+            <!-- Scribe View -->
+            <div id="scribe-view" class="view active">
+                <div class="control-bar">
+                    <button id="start-consult-btn" class="btn-primary">🎤 Start Consultation</button>
+                    <button id="stop-consult-btn" class="btn-danger" style="display:none;">⏹ Stop</button>
+                    <label><input type="checkbox" id="live-mode" checked /> Live Mode</label>
+                    <select id="print-language">
+                        <option value="English">English</option>
+                        <option value="Hindi">Hindi</option>
+                        <option value="Tamil">Tamil</option>
+                        <option value="Telugu">Telugu</option>
+                        <option value="Kannada">Kannada</option>
+                        <option value="Bengali">Bengali</option>
+                        <option value="Marathi">Marathi</option>
+                        <option value="Malayalam">Malayalam</option>
+                        <option value="Gujarati">Gujarati</option>
+                        <option value="Punjabi">Punjabi</option>
+                    </select>
+                    <span id="selected-patient" style="font-size:12px;color:#22d3ee;display:none;">👤 Patient: <span id="selected-patient-name"></span></span>
+                </div>
+                <div class="presets">
+                    <button class="preset-btn" data-transcript="Doctor: What seems to be the trouble? Patient: I have chest congestion and cough for 4 days. Doctor: Let me check... you have Acute Bronchitis. I'm prescribing Amoxicillin 500mg thrice daily for 5 days.">📋 Acute Bronchitis</button>
+                    <button class="preset-btn" data-transcript="Doctor: How are you feeling? Patient: Dizzy spells. Doctor: BP is 146/93. You have Hypertension. I'm starting Telmisartan 40mg once daily.">📋 Hypertension</button>
+                    <button class="preset-btn" data-transcript="Doctor: What's the problem? Patient: Burning stomach pain. Doctor: You have GERD. Take Pantoprazole 40mg daily for 14 days.">📋 GERD</button>
+                </div>
+                <textarea id="transcript-input" placeholder="Speak or paste transcript here..." rows="4"></textarea>
+                <button id="analyze-btn" class="btn-secondary">🔍 Analyze Transcript</button>
+                <div id="analysis-status"></div>
+
+                <div class="prescription-draft">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+                        <h2>📋 Prescription Draft</h2>
+                        <div style="display:flex; gap:8px;">
+                            <button id="clear-draft-btn" class="btn-outline">Clear</button>
+                            <button id="print-btn" class="btn-primary">🖨️ Prepare Rx Sheet</button>
+                        </div>
+                    </div>
+                    <div class="draft-fields">
+                        <div><label>Chief Complaint</label><textarea id="chief-complaint"></textarea></div>
+                        <div><label>History of Present Illness (HPI)</label><textarea id="hpi"></textarea></div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                            <div><label>Primary Diagnosis</label><input id="primary-diagnosis" /></div>
+                            <div><label>Differential Diagnosis</label><input id="differential-diagnosis" /></div>
+                        </div>
+                        <div>
+                            <label>Medications</label>
+                            <div id="medications-list"></div>
+                            <div class="medication-add">
+                                <input id="med-drug" placeholder="Drug Name" />
+                                <input id="med-dose" placeholder="Dose" />
+                                <input id="med-frequency" placeholder="Frequency" />
+                                <select id="med-route"><option>Oral</option><option>IV</option><option>IM</option><option>SubQ</option><option>Topical</option></select>
+                                <input id="med-duration" placeholder="Duration" />
+                                <button id="add-med-btn" class="btn-secondary">Add</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label>Lab Tests</label>
+                            <div id="lab-tests-list"></div>
+                            <div class="lab-add">
+                                <input id="lab-test" placeholder="Test name" />
+                                <button id="add-lab-btn" class="btn-secondary">Add</button>
+                            </div>
+                        </div>
+                        <div><label>Advice & Instructions</label><textarea id="advice"></textarea></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History View -->
+            <div id="history-view" class="view">
+                <h2>📋 Consultation History</h2>
+                <div id="history-list"></div>
+            </div>
+
+            <!-- Observability View -->
+            <div id="observability-view" class="view">
+                <h2>📊 Observability Dashboard</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card"><span class="metric-label">Total Cases</span><span class="metric-value" id="total-cases">0</span></div>
+                    <div class="metric-card"><span class="metric-label">Avg Latency</span><span class="metric-value" id="avg-latency">0s</span></div>
+                    <div class="metric-card"><span class="metric-label">Avg Tokens</span><span class="metric-value" id="avg-tokens">0</span></div>
+                    <div class="metric-card"><span class="metric-label">Groq</span><span class="metric-value" id="groq-status-metric">Checking...</span></div>
+                </div>
+                <div id="case-logs"></div>
+            </div>
+
+            <!-- IPD Patients View -->
+            <div id="ipd-patients-view" class="view">
+                <h2>🛏️ Admitted Patients (IPD)</h2>
+                <p style="color:#94a3b8; font-size:13px; margin-bottom:12px;">Click on a patient to start a consultation linked to them.</p>
+                <div id="ipd-patient-list" class="ipd-patient-list"></div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script>
+// =====================================================================
+// OPD SCRIBE – Full functionality with token check and IPD integration
+// =====================================================================
+
+const API_BASE = 'http://localhost:8000/api';
+const accessToken = localStorage.getItem('access_token');
+if (!accessToken) {
+    window.location.href = '/index.html';
+}
+
+let currentUser = null;
+let refreshToken = localStorage.getItem('refresh_token') || null;
+let isConsulting = false;
+let recognition = null;
+let accumulatedTranscript = '';
+let currentFinal = '';
+let selectedPatientId = null;
+
+async function apiRequest(endpoint, options = {}) {
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+    if (res.status === 401 && refreshToken) {
+        const r = await fetch(`${API_BASE}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken })
+        });
+        if (r.ok) {
+            const data = await r.json();
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            accessToken = data.access_token;
+            refreshToken = data.refresh_token;
+            headers['Authorization'] = `Bearer ${data.access_token}`;
+            return fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+        } else {
+            localStorage.clear();
+            window.location.href = '/index.html';
+        }
+    }
+    return res;
+}
+
+function showView(id) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(id + '-view').classList.add('active');
+    document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.sidebar button[data-view="${id}"]`)?.classList.add('active');
+    if (id === 'ipd-patients') loadIpdPatients();
+}
+
+async function loadUserInfo() {
+    const res = await apiRequest('/auth/me');
+    if (res.ok) {
+        const data = await res.json();
+        currentUser = data.user;
+        document.getElementById('user-email').textContent = currentUser.email;
+        checkGroqStatus();
+        loadConsultations();
+        loadMetrics();
+    } else {
+        localStorage.clear();
+        window.location.href = '/index.html';
+    }
+}
+
+async function checkGroqStatus() {
+    try {
+        const res = await apiRequest('/health');
+        if (res.ok) {
+            const data = await res.json();
+            const statusEl = document.getElementById('groq-status');
+            const metricEl = document.getElementById('groq-status-metric');
+            if (data.groq_available) {
+                statusEl.textContent = '✅ Connected';
+                statusEl.style.color = '#34d399';
+                if (metricEl) metricEl.textContent = '✅ Connected';
+            } else {
+                statusEl.textContent = '❌ Disconnected';
+                statusEl.style.color = '#f87171';
+                if (metricEl) metricEl.textContent = '❌ Disconnected';
+            }
+        }
+    } catch(e) {
+        document.getElementById('groq-status').textContent = '❌ Backend unreachable';
+    }
+}
+
+document.getElementById('start-consult-btn').addEventListener('click', () => {
+    isConsulting = true;
+    document.getElementById('start-consult-btn').style.display = 'none';
+    document.getElementById('stop-consult-btn').style.display = 'inline-block';
+    document.getElementById('transcript-input').value = '';
+    accumulatedTranscript = '';
+    currentFinal = '';
+    clearDraft();
+    if (selectedPatientId) {
+        document.getElementById('selected-patient').style.display = 'inline-block';
+    }
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-IN';
+        recognition.onresult = (event) => {
+            let final = '';
+            let interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                if (event.results[i].isFinal) {
+                    final += event.results[i][0].transcript + ' ';
+                } else {
+                    interim += event.results[i][0].transcript;
+                }
+            }
+            currentFinal += final;
+            const fullText = accumulatedTranscript + ' ' + currentFinal + ' ' + interim;
+            document.getElementById('transcript-input').value = fullText.trim();
+        };
+        recognition.onend = () => {
+            if (isConsulting) {
+                try { recognition.start(); } catch(e) {}
+            }
+        };
+        recognition.start();
+    } else {
+        document.getElementById('transcript-input').placeholder = 'Type transcript here...';
+    }
+});
+
+document.getElementById('stop-consult-btn').addEventListener('click', () => {
+    isConsulting = false;
+    document.getElementById('stop-consult-btn').style.display = 'none';
+    document.getElementById('start-consult-btn').style.display = 'inline-block';
+    if (recognition) {
+        recognition.stop();
+        recognition = null;
+    }
+    const finalText = document.getElementById('transcript-input').value.trim();
+    if (finalText.length > 20) {
+        analyzeTranscript();
+    }
+});
+
+document.getElementById('analyze-btn').addEventListener('click', analyzeTranscript);
+
+document.querySelectorAll('.preset-btn').forEach(b => {
+    b.addEventListener('click', () => {
+        document.getElementById('transcript-input').value = b.dataset.transcript;
+        analyzeTranscript();
+    });
+});
+
+async function analyzeTranscript() {
+    const transcript = document.getElementById('transcript-input').value.trim();
+    if (transcript.length < 10) {
+        document.getElementById('analysis-status').textContent = '⚠️ Need more text (at least 10 characters)';
+        return;
+    }
+    document.getElementById('analysis-status').textContent = '🔄 Analyzing with Groq...';
+    document.getElementById('analyze-btn').disabled = true;
+    try {
+        const payload = { transcript };
+        if (selectedPatientId) {
+            payload.patient_id = selectedPatientId;
+        }
+        const res = await apiRequest('/scribe', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            document.getElementById('analysis-status').textContent = '❌ Error: ' + (data.detail || 'Failed');
+            return;
+        }
+        populateDraft(data);
+        document.getElementById('analysis-status').textContent = '✅ Prescription ready!';
+        loadConsultations();
+        loadMetrics();
+    } catch(e) {
+        document.getElementById('analysis-status').textContent = '❌ Network error';
+    }
+    document.getElementById('analyze-btn').disabled = false;
+}
+
+function populateDraft(data) {
+    document.getElementById('chief-complaint').value = data.chiefComplaint || '';
+    document.getElementById('hpi').value = data.hpi || '';
+    document.getElementById('primary-diagnosis').value = data.primaryDiagnosis || '';
+    document.getElementById('differential-diagnosis').value = data.differentialDiagnosis || '';
+    document.getElementById('advice').value = data.advice || '';
+
+    const medList = document.getElementById('medications-list');
+    medList.innerHTML = '';
+    if (data.medications && data.medications.length > 0) {
+        data.medications.forEach((m, i) => {
+            const div = document.createElement('div');
+            div.className = 'medication-item';
+            div.innerHTML = `<span>${i+1}. ${m.drugName || 'Unknown'} - ${m.dose || 'N/A'} - ${m.frequency || 'N/A'} - ${m.route || 'N/A'} - ${m.duration || 'N/A'}</span>
+                <button onclick="this.parentElement.remove()">✕</button>`;
+            medList.appendChild(div);
+        });
+    } else {
+        const div = document.createElement('div');
+        div.className = 'medication-item';
+        div.innerHTML = `<span style="color:#64748b;">No medications found. Add manually below.</span>`;
+        medList.appendChild(div);
+    }
+
+    const labList = document.getElementById('lab-tests-list');
+    labList.innerHTML = '';
+    if (data.labTests && data.labTests.length > 0) {
+        data.labTests.forEach(t => {
+            const div = document.createElement('div');
+            div.className = 'lab-item';
+            div.innerHTML = `<span>${t}</span><button onclick="this.parentElement.remove()">✕</button>`;
+            labList.appendChild(div);
+        });
+    } else {
+        const div = document.createElement('div');
+        div.className = 'lab-item';
+        div.innerHTML = `<span style="color:#64748b;">No lab tests recommended.</span>`;
+        labList.appendChild(div);
+    }
+}
+
+function clearDraft() {
+    ['chief-complaint','hpi','primary-diagnosis','differential-diagnosis','advice'].forEach(id =>
+        document.getElementById(id).value = '');
+    document.getElementById('medications-list').innerHTML = '';
+    document.getElementById('lab-tests-list').innerHTML = '';
+}
+document.getElementById('clear-draft-btn').addEventListener('click', clearDraft);
+
+document.getElementById('add-med-btn').addEventListener('click', () => {
+    const drug = document.getElementById('med-drug').value.trim();
+    if (!drug) { alert('Enter drug name'); return; }
+    const dose = document.getElementById('med-dose').value || 'N/A';
+    const freq = document.getElementById('med-frequency').value || 'N/A';
+    const route = document.getElementById('med-route').value;
+    const dur = document.getElementById('med-duration').value || 'N/A';
+    const list = document.getElementById('medications-list');
+    if (list.children.length === 1 && list.children[0].querySelector('span')?.textContent.includes('No medications')) {
+        list.innerHTML = '';
+    }
+    const div = document.createElement('div');
+    div.className = 'medication-item';
+    div.innerHTML = `<span>${list.children.length+1}. ${drug} - ${dose} - ${freq} - ${route} - ${dur}</span>
+        <button onclick="this.parentElement.remove()">✕</button>`;
+    list.appendChild(div);
+    ['med-drug','med-dose','med-frequency','med-duration'].forEach(id => document.getElementById(id).value = '');
+});
+
+document.getElementById('add-lab-btn').addEventListener('click', () => {
+    const test = document.getElementById('lab-test').value.trim();
+    if (!test) { alert('Enter test name'); return; }
+    const list = document.getElementById('lab-tests-list');
+    if (list.children.length === 1 && list.children[0].querySelector('span')?.textContent.includes('No lab tests')) {
+        list.innerHTML = '';
+    }
+    const div = document.createElement('div');
+    div.className = 'lab-item';
+    div.innerHTML = `<span>${test}</span><button onclick="this.parentElement.remove()">✕</button>`;
+    list.appendChild(div);
+    document.getElementById('lab-test').value = '';
+});
+
+document.getElementById('print-btn').addEventListener('click', () => {
+    alert('📄 Print prescription using browser print (Ctrl+P)');
+    window.print();
+});
+
+async function loadConsultations() {
+    try {
+        const res = await apiRequest('/consultations?limit=50');
+        if (res.ok) {
+            const data = await res.json();
+            const container = document.getElementById('history-list');
+            if (!data.consultations || data.consultations.length === 0) {
+                container.innerHTML = '<p style="color:#64748b;">No consultations yet.</p>';
+                return;
+            }
+            container.innerHTML = data.consultations.map(c => `
+                <div class="history-item" onclick="loadConsultation(${c.id})">
+                    <strong>${c.case_id}</strong> - ${new Date(c.created_at).toLocaleDateString()}
+                    <div style="color:#94a3b8;">${c.chief_complaint || 'No complaint'} • ${c.medications_count} meds</div>
+                </div>
+            `).join('');
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function loadConsultation(id) {
+    try {
+        const res = await apiRequest(`/consultations/${id}`);
+        if (res.ok) {
+            const data = await res.json();
+            populateDraft(data);
+            document.getElementById('transcript-input').value = data.raw_transcript || '';
+            if (data.patient_id) {
+                selectedPatientId = data.patient_id;
+                document.getElementById('selected-patient').style.display = 'inline-block';
+                document.getElementById('selected-patient-name').textContent = 'Patient ID: ' + data.patient_id;
+            }
+            showView('scribe');
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function loadMetrics() {
+    try {
+        const res = await apiRequest('/consultations?limit=100');
+        if (res.ok) {
+            const data = await res.json();
+            const cons = data.consultations || [];
+            document.getElementById('total-cases').textContent = cons.length;
+            if (cons.length > 0) {
+                const avgLatency = cons.reduce((s,c) => s + (c.gemini_latency||0), 0) / cons.length;
+                document.getElementById('avg-latency').textContent = avgLatency.toFixed(2) + 's';
+                const avgTokens = cons.reduce((s,c) => s + (c.total_tokens||0), 0) / cons.length;
+                document.getElementById('avg-tokens').textContent = Math.round(avgTokens);
+            }
+            const container = document.getElementById('case-logs');
+            if (cons.length === 0) {
+                container.innerHTML = '<p style="color:#64748b;">No logs</p>';
+                return;
+            }
+            container.innerHTML = `
+                <table>
+                    <tr><th>Case</th><th>Date</th><th>Diagnosis</th><th>Meds</th><th>Latency</th></tr>
+                    ${cons.slice(0,20).map(c => `
+                        <tr><td>${c.case_id}</td><td>${new Date(c.created_at).toLocaleDateString()}</td>
+                        <td>${c.primary_diagnosis || '—'}</td><td>${c.medications_count}</td>
+                        <td>${(c.gemini_latency||0).toFixed(2)}s</td></tr>
+                    `).join('')}
+                </table>
+            `;
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function loadIpdPatients() {
+    try {
+        const res = await apiRequest('/ipd/patients');
+        if (res.ok) {
+            const patients = await res.json();
+            const container = document.getElementById('ipd-patient-list');
+            if (!patients || patients.length === 0) {
+                container.innerHTML = '<p style="color:#64748b;">No admitted patients.</p>';
+                return;
+            }
+            container.innerHTML = patients.map(p => `
+                <div class="ipd-patient-card">
+                    <div class="info">
+                        <h3>${p.name}</h3>
+                        <div class="meta">${p.age || 'N/A'}y ${p.gender || ''} • ${p.ward} - Bed ${p.bed || ''}</div>
+                        <div class="meta">Diagnosis: ${p.diagnosis || 'N/A'}</div>
+                        ${p.latest_vital ? `<div class="meta">Latest BP: ${p.latest_vital.bp || '--'} | HR: ${p.latest_vital.heart_rate || '--'} | Temp: ${p.latest_vital.temperature || '--'}°C</div>` : ''}
+                    </div>
+                    <div class="actions">
+                        <button class="btn-primary" onclick="selectIpdPatient(${p.id}, '${p.name}')">🩺 Consult</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch(e) { console.error(e); }
+}
+
+function selectIpdPatient(patientId, patientName) {
+    selectedPatientId = patientId;
+    document.getElementById('selected-patient').style.display = 'inline-block';
+    document.getElementById('selected-patient-name').textContent = patientName;
+    showView('scribe');
+    document.getElementById('transcript-input').value = '';
+    document.getElementById('analysis-status').textContent = `👤 Consulting for ${patientName}`;
+}
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+    localStorage.clear();
+    window.location.href = '/index.html';
+});
+
+document.querySelectorAll('.sidebar button').forEach(b => {
+    b.addEventListener('click', () => {
+        const view = b.dataset.view;
+        showView(view);
+        if (view === 'history') loadConsultations();
+        else if (view === 'observability') loadMetrics();
+        else if (view === 'ipd-patients') loadIpdPatients();
+    });
+});
+
+loadUserInfo();
+</script>
+</body>
+</html>

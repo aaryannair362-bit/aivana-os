@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IPD Nursing</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e2e8f0; min-height: 100vh; }
+        .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #111827; border-bottom: 1px solid #1e293b; flex-wrap: wrap; gap: 10px; }
+        .app-header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #22d3ee, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .header-right span { font-size: 12px; color: #94a3b8; }
+        .app-main { display: flex; flex: 1; }
+        .sidebar { width: 200px; background: #0f172a; border-right: 1px solid #1e293b; padding: 12px 0; }
+        .sidebar button { display: block; width: 100%; padding: 12px 20px; background: transparent; border: none; color: #94a3b8; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.2s; }
+        .sidebar button:hover { background: #1e293b; color: #e2e8f0; }
+        .sidebar button.active { background: #1e293b; color: #22d3ee; border-right: 2px solid #22d3ee; }
+        .content { flex: 1; padding: 20px; overflow-y: auto; max-height: calc(100vh - 80px); }
+        .view { display: none; }
+        .view.active { display: block; }
+        .patient-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
+        .patient-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; transition: border-color 0.2s; cursor: pointer; }
+        .patient-card:hover { border-color: #06b6d4; }
+        .patient-card h3 { font-size: 16px; margin-bottom: 4px; }
+        .patient-card .meta { font-size: 12px; color: #94a3b8; }
+        .patient-card .vital { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; font-size: 13px; }
+        .patient-card .vital span { background: #0f172a; padding: 2px 8px; border-radius: 12px; }
+        .btn-primary { padding: 8px 16px; background: linear-gradient(135deg, #06b6d4, #0891b2); border: none; border-radius: 8px; color: white; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-secondary { padding: 6px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 12px; cursor: pointer; }
+        .btn-secondary:hover { background: #2d3748; }
+        .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid #334155; border-radius: 8px; color: #94a3b8; font-size: 12px; cursor: pointer; }
+        .btn-outline:hover { border-color: #64748b; color: #e2e8f0; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 12px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 13px; outline: none; }
+        .form-group textarea { min-height: 60px; resize: vertical; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #06b6d4; }
+        .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal-content { background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 24px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .modal-header h2 { font-size: 18px; }
+        .modal-close { background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; }
+        .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+        .voice-btn { background: #06b6d4; color: #0a0e17; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; transition: 0.2s; }
+        .voice-btn:hover { transform: scale(1.05); }
+        .voice-btn.listening { background: #dc2626; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        .abnormal { border-left: 4px solid #dc2626; }
+        .alert-banner { background: #dc2626; color: white; padding: 8px 16px; border-radius: 8px; margin-bottom: 12px; display: none; }
+        .tab-bar { display: flex; gap: 8px; border-bottom: 1px solid #1e293b; padding-bottom: 8px; margin-bottom: 16px; }
+        .tab-btn { background: none; border: none; padding: 6px 16px; color: #94a3b8; cursor: pointer; font-size: 13px; }
+        .tab-btn.active { color: #22d3ee; border-bottom: 2px solid #22d3ee; }
+        .role-badge { background: #1e293b; padding: 2px 10px; border-radius: 12px; font-size: 10px; text-transform: uppercase; }
+        .vital-item, .lab-item { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; background: #0f172a; padding: 4px 8px; border-radius: 4px; }
+        .vital-item input, .lab-item input { background: transparent; border: 1px solid #1e293b; border-radius: 4px; padding: 4px; color: #e2e8f0; flex: 1; }
+        .vital-item input:focus, .lab-item input:focus { border-color: #06b6d4; outline: none; }
+        .del-btn { background: none; border: none; color: #f87171; cursor: pointer; font-size: 18px; }
+        .del-btn:hover { color: #dc2626; }
+    </style>
+</head>
+<body>
+<div id="app">
+    <header class="app-header">
+        <h1>🏥 IPD Nursing</h1>
+        <div class="header-right">
+            <span id="ollama-status">🔄 Checking...</span>
+            <span id="user-email" style="color:#e2e8f0;"></span>
+            <span id="user-role" class="role-badge"></span>
+            <button id="logout-btn" class="btn-outline">Logout</button>
+        </div>
+    </header>
+    <main class="app-main">
+        <aside class="sidebar">
+            <button class="active" data-view="dashboard">📊 Dashboard</button>
+            <button data-view="patients" id="patients-tab">👥 Patients</button>
+            <button data-view="assign" id="assign-tab">📋 Assign</button>
+            <button data-view="tasks" id="tasks-tab">✅ Tasks</button>
+        </aside>
+        <section class="content">
+            <div id="alert-banner" class="alert-banner">⚠️ Abnormal vitals detected</div>
+            <div id="dashboard-view" class="view active">
+                <h2>Patient Overview</h2>
+                <div id="patient-grid" class="patient-grid"></div>
+            </div>
+            <div id="patients-view" class="view">
+                <h2>All Patients</h2>
+                <div id="patient-list" style="margin-top:12px;"></div>
+                <button id="show-admit-btn" class="btn-primary" style="margin-top:12px;">➕ Admit Patient</button>
+            </div>
+            <div id="assign-view" class="view">
+                <h2>Assign Patient to Nurse</h2>
+                <div class="form-group"><label>Patient</label><select id="assign-patient"></select></div>
+                <div class="form-group"><label>Nurse</label><select id="assign-nurse"></select></div>
+                <button id="assign-btn" class="btn-primary">Assign</button>
+                <div id="assign-result"></div>
+            </div>
+            <div id="tasks-view" class="view">
+                <h2>Tasks</h2>
+                <button id="show-task-btn" class="btn-primary">➕ Create Task</button>
+                <div id="task-list" style="margin-top:12px;"></div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- Patient Detail Modal -->
+<div id="patient-detail-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="detail-patient-name">Patient Details</h2>
+            <button class="modal-close" onclick="closeModal('patient-detail-modal')">&times;</button>
+        </div>
+        <div id="detail-content"></div>
+    </div>
+</div>
+
+<!-- Admit Modal -->
+<div id="admit-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header"><h2>Admit Patient</h2><button class="modal-close" onclick="closeModal('admit-modal')">&times;</button></div>
+        <div class="form-group"><label>Name</label><input id="admit-name" placeholder="Patient name" /></div>
+        <div class="form-group"><label>Age</label><input id="admit-age" type="number" placeholder="Age" /></div>
+        <div class="form-group"><label>Gender</label><select id="admit-gender"><option>Male</option><option>Female</option><option>Other</option></select></div>
+        <div class="form-group"><label>Ward</label><input id="admit-ward" placeholder="Ward name" /></div>
+        <div class="form-group"><label>Bed</label><input id="admit-bed" placeholder="Bed number" /></div>
+        <div class="form-group"><label>Diagnosis</label><textarea id="admit-diagnosis" placeholder="Primary diagnosis"></textarea></div>
+        <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('admit-modal')">Cancel</button><button class="btn-primary" id="admit-submit">Admit</button></div>
+    </div>
+</div>
+
+<!-- Task Modal -->
+<div id="task-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header"><h2>Create Task</h2><button class="modal-close" onclick="closeModal('task-modal')">&times;</button></div>
+        <div class="form-group"><label>Patient</label><select id="task-patient"></select></div>
+        <div class="form-group"><label>Assigned Nurse (optional)</label><select id="task-nurse"><option value="">Unassigned</option></select></div>
+        <div class="form-group"><label>Description</label><textarea id="task-desc" placeholder="Task description"></textarea></div>
+        <div class="form-group"><label>Due Date</label><input id="task-due" type="datetime-local" /></div>
+        <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('task-modal')">Cancel</button><button class="btn-primary" id="task-submit">Create</button></div>
+    </div>
+</div>
+
+<!-- ===== NURSING NOTES MODAL (Voice-first, like OPD) ===== -->
+<div id="nursing-consult-modal" class="modal" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="nursing-consult-patient">Nursing Notes – <span id="nursing-consult-patient-name"></span></h2>
+            <button class="modal-close" onclick="closeModal('nursing-consult-modal')">&times;</button>
+        </div>
+        <div style="margin-bottom:12px;">
+            <p><strong>Ward:</strong> <span id="nursing-consult-ward"></span> | <strong>Bed:</strong> <span id="nursing-consult-bed"></span></p>
+        </div>
+        <!-- Voice/Text Input -->
+        <div style="margin-bottom:16px;">
+            <label style="font-weight:600;display:block;margin-bottom:4px;">📝 Speak or type the nursing narrative</label>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+                <button id="nursing-voice-btn" class="voice-btn">🎤</button>
+                <span id="nursing-voice-status" style="font-size:12px; color:#94a3b8;">Click mic to speak</span>
+            </div>
+            <textarea id="nursing-voice-text" rows="6" placeholder="Type or speak the consultation... e.g. 'BP 120/80, HR 72, Hb 12.5, patient is stable...'" style="width:100%;padding:8px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;resize:vertical;"></textarea>
+            <button id="nursing-process-btn" class="btn-primary" style="margin-top:8px;">⚙️ Process</button>
+        </div>
+
+        <!-- Extracted Sections -->
+        <div id="nursing-extracted" style="display:none; margin-top:16px; border-top:1px solid #1e293b; padding-top:16px;">
+            <!-- Vitals -->
+            <div>
+                <h3 style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>📊 Vitals</span>
+                    <button class="btn-secondary" onclick="addVitalItem()">➕ Add</button>
+                </h3>
+                <div id="vital-list" style="margin-top:6px;"></div>
+            </div>
+            <!-- Labs -->
+            <div style="margin-top:16px;">
+                <h3 style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>🧪 Labs</span>
+                    <button class="btn-secondary" onclick="addLabItem()">➕ Add</button>
+                </h3>
+                <div id="lab-list" style="margin-top:6px;"></div>
+            </div>
+            <!-- Nursing Note -->
+            <div style="margin-top:16px;">
+                <h3>📝 Nursing Note</h3>
+                <textarea id="nursing-note-text" rows="4" style="width:100%;padding:8px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;resize:vertical;"></textarea>
+            </div>
+        </div>
+
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('nursing-consult-modal')">Cancel</button>
+            <button class="btn-primary" id="nursing-save-btn">💾 Save Nursing Notes</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_BASE = 'http://localhost:8000/api';
+const accessToken = localStorage.getItem('access_token');
+if (!accessToken) window.location.href = '/index.html';
+
+let currentUser = null;
+let currentPatientId = null;
+
+async function apiRequest(endpoint, options = {}) {
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+    if (res.status === 401) {
+        const refresh = localStorage.getItem('refresh_token');
+        if (refresh) {
+            const r = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refresh })
+            });
+            if (r.ok) {
+                const data = await r.json();
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                headers['Authorization'] = `Bearer ${data.access_token}`;
+                return fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+            }
+        }
+        window.location.href = '/index.html';
+    }
+    return res;
+}
+
+function showView(id) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(id + '-view').classList.add('active');
+    document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.sidebar button[data-view="${id}"]`)?.classList.add('active');
+}
+
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+// ---------- Load user ----------
+async function loadUser() {
+    const res = await apiRequest('/auth/me');
+    if (res.ok) {
+        const data = await res.json();
+        currentUser = data.user;
+        document.getElementById('user-email').textContent = currentUser.email;
+        document.getElementById('user-role').textContent = currentUser.role;
+        checkOllama();
+        applyRolePermissions();
+        loadDashboard();
+    } else {
+        localStorage.clear();
+        window.location.href = '/index.html';
+    }
+}
+
+function applyRolePermissions() {
+    const role = currentUser.role;
+    document.getElementById('patients-tab').style.display = (role === 'HeadNurse' || role === 'NursingStation') ? 'block' : 'none';
+    document.getElementById('assign-tab').style.display = (role === 'HeadNurse') ? 'block' : 'none';
+    document.getElementById('tasks-tab').style.display = (role === 'HeadNurse' || role === 'Nurse') ? 'block' : 'none';
+    const admitBtn = document.getElementById('show-admit-btn');
+    if (admitBtn) admitBtn.style.display = (role === 'NursingStation') ? 'inline-block' : 'none';
+    const taskBtn = document.getElementById('show-task-btn');
+    if (taskBtn) taskBtn.style.display = (role === 'HeadNurse') ? 'inline-block' : 'none';
+}
+
+// ---------- Ollama status ----------
+async function checkOllama() {
+    try {
+        const res = await apiRequest('/health');
+        if (res.ok) {
+            const data = await res.json();
+            const el = document.getElementById('ollama-status');
+            if (data.groq_available !== undefined) {
+                el.textContent = data.groq_available ? `✅ Groq: ${data.groq_model}` : '❌ Groq not available';
+                el.style.color = data.groq_available ? '#34d399' : '#f87171';
+            } else {
+                el.textContent = '✅ AI Available';
+                el.style.color = '#34d399';
+            }
+        }
+    } catch(e) { document.getElementById('ollama-status').textContent = '❌ Backend unreachable'; }
+}
+
+// ---------- Dashboard ----------
+async function loadDashboard() {
+    const res = await apiRequest('/ipd/patients');
+    if (!res.ok) return;
+    const patients = await res.json();
+    const grid = document.getElementById('patient-grid');
+    grid.innerHTML = patients.map(p => `
+        <div class="patient-card ${p.abnormal ? 'abnormal' : ''}" onclick="showPatientDetail(${p.id})">
+            <h3>${p.name}</h3>
+            <div class="meta">${p.age || 'N/A'}y ${p.gender || ''} • ${p.ward} - Bed ${p.bed || ''}</div>
+            <div class="meta">${p.diagnosis || 'No diagnosis'}</div>
+            ${p.latest_vital ? `
+                <div class="vital">
+                    <span>BP: ${p.latest_vital.bp || '--'}</span>
+                    <span>HR: ${p.latest_vital.heart_rate || '--'}</span>
+                    <span>Temp: ${p.latest_vital.temperature || '--'}°C</span>
+                    <span>SpO2: ${p.latest_vital.oxygen_sat || '--'}%</span>
+                </div>
+                <div style="font-size:11px;color:#64748b;">Updated: ${new Date(p.latest_vital.recorded_at).toLocaleString()}</div>
+            ` : '<div class="vital">No vitals recorded</div>'}
+            <div class="meta">Pending Tasks: ${p.pending_tasks || 0}</div>
+        </div>
+    `).join('');
+    const hasAbnormal = patients.some(p => p.abnormal);
+    document.getElementById('alert-banner').style.display = hasAbnormal ? 'block' : 'none';
+}
+
+// ---------- Patient Detail ----------
+async function showPatientDetail(patientId) {
+    currentPatientId = patientId;
+    const res = await apiRequest(`/patients/${patientId}/details`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const patient = data.patient;
+    document.getElementById('detail-patient-name').textContent = patient.name;
+    const content = document.getElementById('detail-content');
+    content.innerHTML = `
+        <div style="margin-bottom:12px;">
+            <p><strong>Ward:</strong> ${patient.ward} | <strong>Bed:</strong> ${patient.bed}</p>
+            <p><strong>Diagnosis:</strong> ${patient.diagnosis || 'N/A'}</p>
+            <p><strong>Status:</strong> ${patient.status}</p>
+            <p><strong>Admitted:</strong> ${new Date(patient.admission_date).toLocaleString()}</p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+                ${currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation' ? `
+                    <button class="btn-secondary" onclick="editPatient(${patient.id})">✎ Edit</button>
+                ` : ''}
+                ${currentUser.role === 'Nurse' || currentUser.role === 'HeadNurse' ? `
+                    <button class="btn-primary" onclick="openNursingConsult(${patient.id})">📝 Nursing Notes</button>
+                ` : ''}
+            </div>
+        </div>
+        <div class="tab-bar">
+            <button class="tab-btn active" data-tab="vitals-tab">Vitals</button>
+            <button class="tab-btn" data-tab="tasks-tab">Tasks</button>
+            <button class="tab-btn" data-tab="consultations-tab">Doctor's Notes</button>
+            <button class="tab-btn" data-tab="nursing-tab">Nursing Notes</button>
+        </div>
+        <div id="vitals-tab" class="tab-content">
+            ${data.vitals.map(v => `
+                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;font-size:13px;">
+                    <span>${new Date(v.recorded_at).toLocaleString()}</span>
+                    <span>BP ${v.bp_systolic}/${v.bp_diastolic} | HR ${v.heart_rate} | Temp ${v.temperature}°C | SpO2 ${v.oxygen_sat}%</span>
+                    ${v.notes ? `<div style="font-size:12px;color:#94a3b8;">${v.notes}</div>` : ''}
+                </div>
+            `).join('') || '<p style="color:#64748b;">No vitals recorded.</p>'}
+        </div>
+        <div id="tasks-tab" class="tab-content" style="display:none;">
+            ${data.tasks.map(t => `
+                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;">
+                    <div><strong>${t.description}</strong> - ${t.status}</div>
+                    <div style="font-size:12px;color:#94a3b8;">Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
+                    ${t.notes ? `<div style="font-size:12px;color:#94a3b8;">${t.notes}</div>` : ''}
+                    ${currentUser.role === 'Nurse' && t.status !== 'Completed' && t.nurse_id == currentUser.id ? `
+                        <button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>
+                    ` : ''}
+                </div>
+            `).join('') || '<p style="color:#64748b;">No tasks.</p>'}
+        </div>
+        <div id="consultations-tab" class="tab-content" style="display:none;">
+            ${data.consultations.map(c => `
+                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;">
+                    <div><strong>${c.case_id}</strong> - ${new Date(c.created_at).toLocaleString()}</div>
+                    <div><strong>Chief Complaint:</strong> ${c.chief_complaint || 'N/A'}</div>
+                    <div><strong>HPI:</strong> ${c.hpi || 'N/A'}</div>
+                    <div><strong>Diagnosis:</strong> ${c.primary_diagnosis || 'N/A'}</div>
+                    <div><strong>Medications:</strong> ${c.medications?.map(m => m.drugName + ' ' + m.dose).join(', ') || 'None'}</div>
+                    <div><strong>Advice:</strong> ${c.advice || 'N/A'}</div>
+                    <details><summary>Full Transcript</summary><pre style="font-size:12px;white-space:pre-wrap;">${c.raw_transcript || ''}</pre></details>
+                </div>
+            `).join('') || '<p style="color:#64748b;">No doctor\'s notes.</p>'}
+        </div>
+        <div id="nursing-tab" class="tab-content" style="display:none;">
+            ${data.nursing_notes.map(n => `
+                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;">
+                    <div style="font-size:12px;color:#94a3b8;">${new Date(n.created_at).toLocaleString()} by Nurse ${n.nurse_id}</div>
+                    <pre style="font-size:12px;white-space:pre-wrap;margin-top:4px;">${n.notes || ''}</pre>
+                    ${n.voice_transcript ? `<details><summary>Voice Transcript</summary><div style="font-size:12px;color:#94a3b8;">${n.voice_transcript}</div></details>` : ''}
+                </div>
+            `).join('') || '<p style="color:#64748b;">No nursing notes.</p>'}
+        </div>
+    `;
+    // Tab switching
+    content.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            content.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            content.querySelectorAll('.tab-content').forEach(tc => tc.style.display = 'none');
+            document.getElementById(btn.dataset.tab).style.display = 'block';
+        });
+    });
+    document.getElementById('patient-detail-modal').style.display = 'flex';
+}
+
+// ---------- Edit Patient ----------
+async function editPatient(patientId) {
+    const newWard = prompt('Enter new Ward:');
+    if (newWard === null) return;
+    const newBed = prompt('Enter new Bed:');
+    if (newBed === null) return;
+    const newDiagnosis = prompt('Enter new Diagnosis:');
+    if (newDiagnosis === null) return;
+    const res = await apiRequest(`/patients/${patientId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ward: newWard, bed: newBed, diagnosis: newDiagnosis })
+    });
+    if (res.ok) {
+        alert('Patient updated');
+        showPatientDetail(patientId);
+        loadDashboard();
+    } else {
+        const err = await res.json();
+        alert(err.detail || 'Update failed');
+    }
+}
+
+// ========== NURSING CONSULT (Voice-first, like OPD) ==========
+
+let consultPatientId = null;
+let extractedVitals = [];
+let extractedLabs = [];
+
+function openNursingConsult(patientId) {
+    consultPatientId = patientId;
+    apiRequest(`/patients/${patientId}/details`).then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Failed to load patient');
+    }).then(data => {
+        const p = data.patient;
+        document.getElementById('nursing-consult-patient-name').textContent = p.name;
+        document.getElementById('nursing-consult-ward').textContent = p.ward;
+        document.getElementById('nursing-consult-bed').textContent = p.bed;
+        document.getElementById('nursing-consult-patient').textContent = `Nursing Notes – ${p.name}`;
+    }).catch(err => alert('Could not load patient: ' + err.message));
+
+    document.getElementById('nursing-voice-text').value = '';
+    document.getElementById('nursing-note-text').value = '';
+    document.getElementById('nursing-extracted').style.display = 'none';
+    extractedVitals = [];
+    extractedLabs = [];
+    renderVitals();
+    renderLabs();
+    document.getElementById('nursing-voice-status').textContent = 'Click mic to speak';
+    document.getElementById('nursing-consult-modal').style.display = 'flex';
+}
+
+// Voice recognition for the narrative
+let nursingVoiceRecognition = null;
+document.getElementById('nursing-voice-btn').addEventListener('click', () => {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        alert('Speech not supported');
+        return;
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (nursingVoiceRecognition) {
+        nursingVoiceRecognition.stop();
+        nursingVoiceRecognition = null;
+        document.getElementById('nursing-voice-btn').classList.remove('listening');
+        document.getElementById('nursing-voice-status').textContent = 'Stopped';
+        return;
+    }
+    nursingVoiceRecognition = new SpeechRecognition();
+    nursingVoiceRecognition.lang = 'en-IN';
+    nursingVoiceRecognition.continuous = false;
+    nursingVoiceRecognition.interimResults = false;
+    nursingVoiceRecognition.onstart = () => {
+        document.getElementById('nursing-voice-btn').classList.add('listening');
+        document.getElementById('nursing-voice-status').textContent = 'Listening...';
+    };
+    nursingVoiceRecognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        const textarea = document.getElementById('nursing-voice-text');
+        textarea.value = (textarea.value ? textarea.value + '\n' : '') + transcript;
+        document.getElementById('nursing-voice-status').textContent = 'Transcribed. Click Process.';
+    };
+    nursingVoiceRecognition.onerror = (e) => {
+        document.getElementById('nursing-voice-status').textContent = 'Error: ' + e.error;
+        document.getElementById('nursing-voice-btn').classList.remove('listening');
+        nursingVoiceRecognition = null;
+    };
+    nursingVoiceRecognition.onend = () => {
+        document.getElementById('nursing-voice-btn').classList.remove('listening');
+        if (document.getElementById('nursing-voice-status').textContent === 'Listening...') {
+            document.getElementById('nursing-voice-status').textContent = 'Click mic to speak';
+        }
+        nursingVoiceRecognition = null;
+    };
+    nursingVoiceRecognition.start();
+});
+
+// Process the narrative
+document.getElementById('nursing-process-btn').addEventListener('click', async () => {
+    const voiceText = document.getElementById('nursing-voice-text').value.trim();
+    if (!voiceText) {
+        alert('Please speak or type some text first.');
+        return;
+    }
+    const btn = document.getElementById('nursing-process-btn');
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+    try {
+        const res = await apiRequest('/ipd/nurse-consult', {
+            method: 'POST',
+            body: JSON.stringify({ patient_id: consultPatientId, voice_text: voiceText })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        extractedVitals = data.vitals || [];
+        extractedLabs = data.labs || [];
+        const note = data.nursing_note || {};
+        document.getElementById('nursing-note-text').value = 
+            `Subjective: ${note.subjective || ''}\nObjective: ${note.objective || ''}\nAssessment: ${note.assessment || ''}\nPlan: ${note.plan || ''}`;
+        renderVitals();
+        renderLabs();
+        document.getElementById('nursing-extracted').style.display = 'block';
+        document.getElementById('nursing-voice-status').textContent = '✅ Processed. Edit if needed, then Save.';
+    } catch (err) {
+        alert('Processing error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⚙️ Process';
+    }
+});
+
+// Render vitals as editable list
+function renderVitals() {
+    const container = document.getElementById('vital-list');
+    container.innerHTML = '';
+    if (extractedVitals.length === 0) {
+        container.innerHTML = '<div style="color:#64748b;font-size:13px;">No vitals extracted.</div>';
+        return;
+    }
+    extractedVitals.forEach((v, idx) => {
+        const div = document.createElement('div');
+        div.className = 'vital-item';
+        div.innerHTML = `
+            <input type="text" value="${v.parameter || ''}" placeholder="Parameter" onchange="updateVital(${idx}, 'parameter', this.value)">
+            <input type="text" value="${v.value || ''}" placeholder="Value" onchange="updateVital(${idx}, 'value', this.value)">
+            <input type="text" value="${v.unit || ''}" placeholder="Unit" onchange="updateVital(${idx}, 'unit', this.value)">
+            <button class="del-btn" onclick="removeVital(${idx})">✕</button>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function updateVital(idx, key, val) {
+    extractedVitals[idx][key] = val;
+}
+
+function removeVital(idx) {
+    extractedVitals.splice(idx, 1);
+    renderVitals();
+}
+
+function addVitalItem() {
+    extractedVitals.push({ parameter: '', value: '', unit: '' });
+    renderVitals();
+}
+
+// Render labs as editable list
+function renderLabs() {
+    const container = document.getElementById('lab-list');
+    container.innerHTML = '';
+    if (extractedLabs.length === 0) {
+        container.innerHTML = '<div style="color:#64748b;font-size:13px;">No labs extracted.</div>';
+        return;
+    }
+    extractedLabs.forEach((l, idx) => {
+        const div = document.createElement('div');
+        div.className = 'lab-item';
+        div.innerHTML = `
+            <input type="text" value="${l.test || ''}" placeholder="Test" onchange="updateLab(${idx}, 'test', this.value)">
+            <input type="text" value="${l.result || ''}" placeholder="Result" onchange="updateLab(${idx}, 'result', this.value)">
+            <button class="del-btn" onclick="removeLab(${idx})">✕</button>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function updateLab(idx, key, val) {
+    extractedLabs[idx][key] = val;
+}
+
+function removeLab(idx) {
+    extractedLabs.splice(idx, 1);
+    renderLabs();
+}
+
+function addLabItem() {
+    extractedLabs.push({ test: '', result: '' });
+    renderLabs();
+}
+
+// Save nursing notes
+document.getElementById('nursing-save-btn').addEventListener('click', async () => {
+    const patientId = consultPatientId;
+    if (!patientId) { alert('No patient selected'); return; }
+
+    const vitalsToSave = extractedVitals.filter(v => v.parameter.trim() !== '');
+    const noteText = document.getElementById('nursing-note-text').value.trim();
+
+    if (vitalsToSave.length === 0 && !noteText) {
+        alert('Please record at least one vital or a nursing note.');
+        return;
+    }
+
+    const saveBtn = document.getElementById('nursing-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+        // Save each vital
+        for (const v of vitalsToSave) {
+            await apiRequest('/ipd/vitals', {
+                method: 'POST',
+                body: JSON.stringify({
+                    patient_id: patientId,
+                    bp_systolic: null,
+                    bp_diastolic: null,
+                    heart_rate: null,
+                    temperature: null,
+                    oxygen_sat: null,
+                    respiratory_rate: null,
+                    notes: `Parameter: ${v.parameter}, Value: ${v.value} ${v.unit}`
+                })
+            });
+        }
+
+        // Save nursing note
+        if (noteText) {
+            await apiRequest('/nursing-notes', {
+                method: 'POST',
+                body: JSON.stringify({
+                    patient_id: patientId,
+                    voice_text: document.getElementById('nursing-voice-text').value,
+                    subjective: noteText,
+                    objective: '',
+                    assessment: '',
+                    plan: ''
+                })
+            });
+        }
+
+        alert('Nursing notes saved successfully!');
+        closeModal('nursing-consult-modal');
+        loadDashboard();
+        if (currentPatientId) showPatientDetail(currentPatientId);
+    } catch (err) {
+        alert('Error: ' + err.message);
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '💾 Save Nursing Notes';
+    }
+});
+
+// ---------- Admit ----------
+document.getElementById('show-admit-btn').addEventListener('click', () => document.getElementById('admit-modal').style.display = 'flex');
+document.getElementById('admit-submit').addEventListener('click', async () => {
+    const name = document.getElementById('admit-name').value;
+    const age = parseInt(document.getElementById('admit-age').value);
+    const gender = document.getElementById('admit-gender').value;
+    const ward = document.getElementById('admit-ward').value;
+    const bed = document.getElementById('admit-bed').value;
+    const diagnosis = document.getElementById('admit-diagnosis').value;
+    if (!name || !ward) { alert('Name and Ward required'); return; }
+    const res = await apiRequest('/ipd/patients', {
+        method: 'POST',
+        body: JSON.stringify({ name, age, gender, ward, bed, diagnosis })
+    });
+    if (res.ok) {
+        closeModal('admit-modal');
+        alert('Patient admitted');
+        loadDashboard();
+    } else {
+        const err = await res.json();
+        alert(err.detail || 'Failed');
+    }
+});
+
+// ---------- Assign ----------
+async function loadAssignOptions() {
+    const [patientsRes, nursesRes] = await Promise.all([
+        apiRequest('/ipd/patients'),
+        apiRequest('/auth/users?role=Nurse')
+    ]);
+    if (patientsRes.ok) {
+        const patients = await patientsRes.json();
+        const sel = document.getElementById('assign-patient');
+        sel.innerHTML = patients.map(p => `<option value="${p.id}">${p.name} (${p.ward})</option>`).join('');
+    }
+    if (nursesRes.ok) {
+        const nurses = await nursesRes.json();
+        const sel = document.getElementById('assign-nurse');
+        sel.innerHTML = nurses.map(n => `<option value="${n.id}">${n.email}</option>`).join('');
+    }
+}
+
+document.getElementById('assign-btn').addEventListener('click', async () => {
+    const patient_id = document.getElementById('assign-patient').value;
+    const nurse_id = document.getElementById('assign-nurse').value;
+    if (!patient_id || !nurse_id) { alert('Select patient and nurse'); return; }
+    const res = await apiRequest('/ipd/assign', {
+        method: 'POST',
+        body: JSON.stringify({ patient_id, nurse_id })
+    });
+    const data = await res.json();
+    document.getElementById('assign-result').textContent = res.ok ? '✅ Assigned' : '❌ ' + (data.detail || 'Failed');
+});
+
+// ---------- Tasks ----------
+document.getElementById('show-task-btn').addEventListener('click', () => document.getElementById('task-modal').style.display = 'flex');
+
+async function loadTaskOptions() {
+    const res = await apiRequest('/ipd/patients');
+    if (res.ok) {
+        const patients = await res.json();
+        const sel = document.getElementById('task-patient');
+        sel.innerHTML = patients.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    }
+    const nursesRes = await apiRequest('/auth/users?role=Nurse');
+    if (nursesRes.ok) {
+        const nurses = await nursesRes.json();
+        const sel = document.getElementById('task-nurse');
+        sel.innerHTML = `<option value="">Unassigned</option>` + nurses.map(n => `<option value="${n.id}">${n.email}</option>`).join('');
+    }
+}
+
+document.getElementById('task-submit').addEventListener('click', async () => {
+    const patient_id = document.getElementById('task-patient').value;
+    const nurse_id = document.getElementById('task-nurse').value;
+    const description = document.getElementById('task-desc').value;
+    const due_date = document.getElementById('task-due').value;
+    if (!patient_id || !description) { alert('Patient and description required'); return; }
+    const res = await apiRequest('/ipd/tasks', {
+        method: 'POST',
+        body: JSON.stringify({ patient_id, nurse_id: nurse_id || null, description, due_date })
+    });
+    if (res.ok) {
+        closeModal('task-modal');
+        alert('Task created');
+        loadTasks();
+    } else {
+        const err = await res.json();
+        alert(err.detail || 'Failed');
+    }
+});
+
+async function loadTasks() {
+    const patientsRes = await apiRequest('/ipd/patients');
+    if (!patientsRes.ok) return;
+    const patients = await patientsRes.json();
+    let allTasks = [];
+    for (const p of patients) {
+        const tRes = await apiRequest(`/ipd/tasks/${p.id}`);
+        if (tRes.ok) {
+            const tasks = await tRes.json();
+            allTasks.push(...tasks.map(t => ({ ...t, patient_name: p.name })));
+        }
+    }
+    const list = document.getElementById('task-list');
+    list.innerHTML = allTasks.map(t => `
+        <div style="background:#111827;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px;">
+            <div><strong>${t.patient_name}</strong> - ${t.description}</div>
+            <div style="font-size:12px;color:#94a3b8;">Status: ${t.status} | Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
+            ${t.notes ? `<div style="font-size:12px;color:#94a3b8;">${t.notes}</div>` : ''}
+            ${currentUser.role === 'Nurse' && t.status !== 'Completed' && t.nurse_id == currentUser.id ? `
+                <button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>
+            ` : ''}
+        </div>
+    `).join('');
+}
+
+async function updateTask(taskId, status) {
+    const res = await apiRequest(`/ipd/tasks/${taskId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+    });
+    if (res.ok) {
+        alert('Task updated');
+        loadTasks();
+        loadDashboard();
+    } else {
+        const err = await res.json();
+        alert(err.detail || 'Failed');
+    }
+}
+
+// ---------- Sidebar ----------
+document.querySelectorAll('.sidebar button').forEach(b => {
+    b.addEventListener('click', () => {
+        const view = b.dataset.view;
+        showView(view);
+        if (view === 'dashboard') loadDashboard();
+        else if (view === 'patients') loadPatients();
+        else if (view === 'assign') loadAssignOptions();
+        else if (view === 'tasks') { loadTaskOptions(); loadTasks(); }
+    });
+});
+
+// ---------- Logout ----------
+document.getElementById('logout-btn').addEventListener('click', () => {
+    localStorage.clear();
+    window.location.href = '/index.html';
+});
+
+// ---------- Start ----------
+loadUser();
+</script>
+</body>
+</html>

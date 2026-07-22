@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Panel</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e2e8f0; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { color: #22d3ee; margin-bottom: 20px; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+        table { width: 100%; border-collapse: collapse; background: #111827; border-radius: 12px; overflow: hidden; }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #1e293b; }
+        th { background: #0f172a; color: #94a3b8; font-weight: 600; }
+        select, button, input { padding: 6px 12px; border-radius: 6px; border: 1px solid #1e293b; background: #0f172a; color: #e2e8f0; }
+        .btn-primary { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #0a0e17; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-outline { background: transparent; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; color: #94a3b8; cursor: pointer; }
+        .btn-outline:hover { border-color: #64748b; color: #e2e8f0; }
+        .flex { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+        .flex input, .flex select { flex: 1; min-width: 150px; }
+        .message { margin: 8px 0; padding: 8px; border-radius: 6px; }
+        .success { color: #34d399; background: #0a2e1a; }
+        .error { color: #f87171; background: #2e0a0a; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="top-bar">
+        <h1>👑 Admin Panel – User Management</h1>
+        <div>
+            <button id="logout-btn" class="btn-outline">Logout</button>
+        </div>
+    </div>
+
+    <div class="flex">
+        <input type="email" id="new-email" placeholder="Email address" />
+        <select id="new-role">
+            <option value="">— Select Role —</option>
+            <option value="Doctor">Doctor</option>
+            <option value="HeadNurse">Head Nurse</option>
+            <option value="Nurse">Nurse</option>
+            <option value="NursingStation">Nursing Station</option>
+            <option value="Admin">Admin</option>
+        </select>
+        <input type="text" id="new-password" placeholder="Password (or leave blank to auto-generate)" />
+        <button id="create-user-btn" class="btn-primary">Create User</button>
+        <button id="refresh-btn" class="btn-primary" style="background:linear-gradient(135deg, #06b6d4, #0891b2);">Refresh</button>
+    </div>
+
+    <div id="message" class="message" style="display:none;"></div>
+
+    <table>
+        <thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="user-table-body"></tbody>
+    </table>
+</div>
+
+<script>
+const API_BASE = '/api';
+const accessToken = localStorage.getItem('access_token');
+if (!accessToken) {
+    window.location.href = '/index.html';
+}
+
+async function apiRequest(endpoint, options = {}) {
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+    const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+    if (res.status === 401) {
+        const refresh = localStorage.getItem('refresh_token');
+        if (refresh) {
+            const r = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: refresh })
+            });
+            if (r.ok) {
+                const data = await r.json();
+                localStorage.setItem('access_token', data.access_token);
+                localStorage.setItem('refresh_token', data.refresh_token);
+                headers['Authorization'] = `Bearer ${data.access_token}`;
+                return fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+            }
+        }
+        window.location.href = '/index.html';
+    }
+    return res;
+}
+
+async function verifyAdmin() {
+    try {
+        const res = await apiRequest('/auth/me');
+        if (res.ok) {
+            const data = await res.json();
+            if (data.user.role !== 'Admin') {
+                const role = data.user.role;
+                if (role === 'Doctor') window.location.href = '/opd.html';
+                else if (role === 'HeadNurse' || role === 'Nurse' || role === 'NursingStation') window.location.href = '/ipd.html';
+                else window.location.href = '/opd.html';
+            }
+        } else {
+            window.location.href = '/index.html';
+        }
+    } catch(e) {
+        window.location.href = '/index.html';
+    }
+}
+
+function showMessage(text, type = 'info') {
+    const el = document.getElementById('message');
+    el.textContent = text;
+    el.className = `message ${type}`;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 8000);
+}
+
+async function loadUsers() {
+    try {
+        const res = await apiRequest('/auth/users');
+        if (res.ok) {
+            const users = await res.json();
+            const tbody = document.getElementById('user-table-body');
+            if (!users || users.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#64748b;">No users found</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = users.map(u => `
+                <tr>
+                    <td>${u.id}</td>
+                    <td>${u.email}</td>
+                    <td>
+                        <select class="role-select" data-id="${u.id}">
+                            <option value="Doctor" ${u.role==='Doctor'?'selected':''}>Doctor</option>
+                            <option value="HeadNurse" ${u.role==='HeadNurse'?'selected':''}>Head Nurse</option>
+                            <option value="Nurse" ${u.role==='Nurse'?'selected':''}>Nurse</option>
+                            <option value="NursingStation" ${u.role==='NursingStation'?'selected':''}>Nursing Station</option>
+                            <option value="Admin" ${u.role==='Admin'?'selected':''}>Admin</option>
+                        </select>
+                    </td>
+                    <td>${u.status}</td>
+                    <td><button class="btn-primary update-role" data-id="${u.id}">Update</button></td>
+                </tr>
+            `).join('');
+            document.querySelectorAll('.update-role').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const id = btn.dataset.id;
+                    const select = document.querySelector(`.role-select[data-id="${id}"]`);
+                    const role = select.value;
+                    const res = await apiRequest(`/auth/users/${id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ role })
+                    });
+                    if (res.ok) {
+                        showMessage('Role updated successfully', 'success');
+                        loadUsers();
+                    } else {
+                        const err = await res.json();
+                        showMessage(err.detail || 'Failed to update role', 'error');
+                    }
+                });
+            });
+        } else {
+            showMessage('Failed to load users', 'error');
+        }
+    } catch(e) {
+        showMessage('Network error loading users', 'error');
+    }
+}
+
+document.getElementById('create-user-btn').addEventListener('click', async () => {
+    const email = document.getElementById('new-email').value.trim();
+    const role = document.getElementById('new-role').value;
+    let password = document.getElementById('new-password').value.trim();
+
+    if (!email) { showMessage('Please enter an email address', 'error'); return; }
+    if (!role) { showMessage('Please select a role', 'error'); return; }
+
+    if (!password) {
+        password = 'Temp@' + Math.random().toString(36).slice(-6).toUpperCase() + '!';
+    }
+
+    const res = await apiRequest('/auth/admin/create-user', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, role })
+    });
+
+    if (res.ok) {
+        const data = await res.json();
+        showMessage(`✅ User ${email} created with role ${role}. Password: ${password}`, 'success');
+        document.getElementById('new-password').value = password;
+        loadUsers();
+    } else {
+        let errMsg = 'Failed to create user';
+        try {
+            const errData = await res.json();
+            errMsg = errData.detail || errMsg;
+        } catch (e) {}
+        showMessage(errMsg, 'error');
+    }
+});
+
+document.getElementById('refresh-btn').addEventListener('click', () => {
+    showMessage('Refreshing user list...', 'info');
+    loadUsers();
+});
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+    localStorage.clear();
+    window.location.href = '/index.html';
+});
+
+verifyAdmin().then(loadUsers);
+</script>
+</body>
+</html>

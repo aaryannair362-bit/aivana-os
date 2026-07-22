@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIVANA Hospital - Login</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-container { width: 100%; max-width: 420px; padding: 20px; }
+        .login-header { text-align: center; margin-bottom: 30px; }
+        .login-header h1 { font-size: 32px; font-weight: 700; background: linear-gradient(135deg, #22d3ee, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .login-header p { color: #94a3b8; font-size: 14px; margin-top: 4px; }
+        .login-box { background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 30px; }
+        .login-box input { width: 100%; padding: 12px 14px; margin-bottom: 12px; background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; color: #e2e8f0; font-size: 14px; outline: none; }
+        .login-box input:focus { border-color: #06b6d4; }
+        .btn-primary { width: 100%; padding: 12px; background: linear-gradient(135deg, #06b6d4, #0891b2); border: none; border-radius: 10px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        .btn-primary:hover { opacity: 0.9; }
+        .error { color: #f87171; font-size: 13px; margin-top: 8px; text-align: center; }
+    </style>
+</head>
+<body>
+<div class="login-container">
+    <div class="login-header">
+        <h1>🏥 AIVANA Hospital</h1>
+        <p>Unified Clinical Portal</p>
+    </div>
+    <div class="login-box">
+        <form id="login-form">
+            <input type="email" id="login-email" placeholder="email@hospital.com" />
+            <input type="password" id="login-password" placeholder="Password" />
+            <button type="submit" class="btn-primary">Sign In</button>
+            <div id="login-error" class="error"></div>
+        </form>
+    </div>
+</div>
+
+<script>
+const API_BASE = '/api';
+
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const errorEl = document.getElementById('login-error');
+    errorEl.textContent = '';
+    try {
+        const res = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            errorEl.textContent = data.detail || 'Login failed';
+            return;
+        }
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        const role = data.user.role;
+        if (role === 'Admin') {
+            window.location.href = '/admin.html';
+        } else if (role === 'Doctor') {
+            window.location.href = '/opd.html';
+        } else if (role === 'HeadNurse' || role === 'Nurse' || role === 'NursingStation') {
+            window.location.href = '/ipd.html';
+        } else {
+            window.location.href = '/opd.html';
+        }
+    } catch(err) {
+        errorEl.textContent = 'Network error';
+    }
+});
+</script>
+</body>
+</html>
