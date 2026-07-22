@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from .config import settings
-from .models import User, PasswordHistory, AuditLog, Organization
+from .models import User, PasswordHistory, AuditLog
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 security = HTTPBearer()
@@ -75,18 +75,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token")
-    # Return a user dict from token (will be enriched with DB data if needed)
     return {
         "id": payload.get("user_id"),
         "email": payload.get("email"),
         "role": payload.get("role"),
         "organization_id": payload.get("organization_id")
     }
-
-def get_current_user_db(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(lambda: None)):
-    # This is a placeholder; we'll implement proper DB lookup in routes.
-    # For simplicity we'll just return the token payload.
-    return get_current_user(credentials)
 
 def log_audit(db: Session, user_id: int, email: str, org_id: int, action: str, resource: str, result: str, details: str = None):
     audit = AuditLog(
@@ -102,35 +96,13 @@ def log_audit(db: Session, user_id: int, email: str, org_id: int, action: str, r
     db.commit()
 
 def is_head_nurse(user: dict) -> bool:
-    return user.get("role") in ["HeadNurse", "Admin"]
+    return user.get("role") == "HeadNurse"
 
-# ========== AUTH ROUTES ==========
+def is_nursing_station(user: dict) -> bool:
+    return user.get("role") == "NursingStation"
 
-@router.post("/register")
-async def register(request: Request, db: Session = Depends(lambda: None)):
-    # We'll need a DB session here – we'll add a dependency.
-    # For simplicity, we'll implement it in main.py or add a get_db dependency.
-    # Since we need to keep the router separate, we'll pass db via dependency.
-    pass
+def is_nurse(user: dict) -> bool:
+    return user.get("role") == "Nurse"
 
-# We'll move the register/login endpoints to main.py or keep them here with db dependency.
-# For brevity, I'll include them in main.py to avoid duplication.
-# But we need to keep the user management endpoints.
-
-@router.get("/users")
-def get_users(
-    role: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(lambda: None)  # will be overridden
-):
-    # To be implemented with proper DB session
-    pass
-
-@router.patch("/users/{user_id}")
-def update_user_role(
-    user_id: int,
-    role: str,
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(lambda: None)
-):
-    pass
+def is_admin(user: dict) -> bool:
+    return user.get("role") == "Admin"

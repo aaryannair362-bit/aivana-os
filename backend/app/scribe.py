@@ -114,26 +114,6 @@ Keep drug names in English. Translate descriptions, instructions, and test names
                 result[key] = default[key]
         return result
 
-    def extract_tasks_from_consultation(self, lab_tests: list, advice: str) -> list:
-        """Generate task descriptions from lab tests and advice."""
-        tasks = []
-        # Lab tests as tasks
-        for test in lab_tests:
-            if test and test.strip():
-                tasks.append(f"Lab Test: {test}")
-        # Extract actionable tasks from advice using LLM
-        if advice and advice.strip():
-            prompt = f"""Extract actionable tasks for a nurse from the following doctor's advice. Return a list of short, clear task descriptions.
-            Advice: "{advice}"
-            Return only a JSON array of strings, like ["task1", "task2"]. If no actionable tasks, return [].
-            """
-            result = self._generate_json(prompt, temperature=0.3)
-            if isinstance(result, list):
-                for item in result:
-                    if isinstance(item, str) and item.strip():
-                        tasks.append(item)
-        return tasks
-
     def is_available(self) -> bool:
         if not self.api_key:
             return False

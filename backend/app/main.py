@@ -12,11 +12,11 @@ from .models import Base, User, Organization, Consultation, PasswordHistory, Pat
 from .auth import (
     get_current_user, get_password_hash, verify_password,
     validate_password_complexity, create_access_token, create_refresh_token,
-    decode_token, log_audit
+    decode_token, log_audit, is_admin, is_head_nurse, is_nursing_station, is_nurse
 )
 from .scribe import scribe
 
-engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
 
@@ -35,18 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-def is_head_nurse(user: dict) -> bool:
-    return user.get("role") == "HeadNurse"
-
-def is_nursing_station(user: dict) -> bool:
-    return user.get("role") == "NursingStation"
-
-def is_nurse(user: dict) -> bool:
-    return user.get("role") == "Nurse"
-
-def is_admin(user: dict) -> bool:
-    return user.get("role") == "Admin"
 
 def create_default_user():
     db = SessionLocal()
@@ -87,7 +75,7 @@ def startup():
     create_default_user()
     if not scribe.is_available():
         print(f"⚠️ Groq API key not configured or invalid.")
-        print(f"   Please set GROQ_API_KEY in .env file")
+        print(f"   Please set GROQ_API_KEY in environment variables")
         print("   (You can still use the system manually without AI)")
     else:
         print(f"✅ Groq connected with model '{scribe.model}'")
@@ -799,7 +787,6 @@ async def voice_to_vitals(request: Request, current_user: dict = Depends(get_cur
     result = scribe._generate_json(prompt, temperature=0.3)
     return result
 
-# ===== UPDATED NURSE CONSULT ENDPOINT (voice-first, flexible vitals & labs) =====
 @app.post("/api/ipd/nurse-consult")
 async def nurse_consult(request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     data = await request.json()
@@ -834,7 +821,6 @@ Example:
     result = scribe._generate_json(prompt, temperature=0.3)
     if not result:
         result = {"vitals": [], "labs": [], "nursing_note": {}}
-    # Save vitals (store as flexible notes)
     for v in result.get("vitals", []):
         vital = Vital(
             patient_id=patient_id,
@@ -848,7 +834,6 @@ Example:
             notes=json.dumps({"parameter": v.get("parameter"), "value": v.get("value"), "unit": v.get("unit")})
         )
         db.add(vital)
-    # Build nursing note including labs
     lab_text = "Labs:\n" + "\n".join([f"{l.get('test')}: {l.get('result')}" for l in result.get("labs", [])])
     nursing_data = result.get("nursing_note", {})
     note_text = f"Subjective: {nursing_data.get('subjective', '')}\nObjective: {nursing_data.get('objective', '')}\nAssessment: {nursing_data.get('assessment', '')}\nPlan: {nursing_data.get('plan', '')}\n\n{lab_text}"

@@ -142,7 +142,7 @@
     </div>
 </div>
 
-<!-- ===== NURSING NOTES MODAL (Voice-first, like OPD) ===== -->
+<!-- Nursing Notes Modal -->
 <div id="nursing-consult-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header">
@@ -152,7 +152,6 @@
         <div style="margin-bottom:12px;">
             <p><strong>Ward:</strong> <span id="nursing-consult-ward"></span> | <strong>Bed:</strong> <span id="nursing-consult-bed"></span></p>
         </div>
-        <!-- Voice/Text Input -->
         <div style="margin-bottom:16px;">
             <label style="font-weight:600;display:block;margin-bottom:4px;">📝 Speak or type the nursing narrative</label>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
@@ -162,10 +161,7 @@
             <textarea id="nursing-voice-text" rows="6" placeholder="Type or speak the consultation... e.g. 'BP 120/80, HR 72, Hb 12.5, patient is stable...'" style="width:100%;padding:8px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;resize:vertical;"></textarea>
             <button id="nursing-process-btn" class="btn-primary" style="margin-top:8px;">⚙️ Process</button>
         </div>
-
-        <!-- Extracted Sections -->
         <div id="nursing-extracted" style="display:none; margin-top:16px; border-top:1px solid #1e293b; padding-top:16px;">
-            <!-- Vitals -->
             <div>
                 <h3 style="display:flex; justify-content:space-between; align-items:center;">
                     <span>📊 Vitals</span>
@@ -173,7 +169,6 @@
                 </h3>
                 <div id="vital-list" style="margin-top:6px;"></div>
             </div>
-            <!-- Labs -->
             <div style="margin-top:16px;">
                 <h3 style="display:flex; justify-content:space-between; align-items:center;">
                     <span>🧪 Labs</span>
@@ -181,13 +176,11 @@
                 </h3>
                 <div id="lab-list" style="margin-top:6px;"></div>
             </div>
-            <!-- Nursing Note -->
             <div style="margin-top:16px;">
                 <h3>📝 Nursing Note</h3>
                 <textarea id="nursing-note-text" rows="4" style="width:100%;padding:8px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;resize:vertical;"></textarea>
             </div>
         </div>
-
         <div class="modal-footer">
             <button class="btn-secondary" onclick="closeModal('nursing-consult-modal')">Cancel</button>
             <button class="btn-primary" id="nursing-save-btn">💾 Save Nursing Notes</button>
@@ -196,12 +189,15 @@
 </div>
 
 <script>
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = '/api';
 const accessToken = localStorage.getItem('access_token');
 if (!accessToken) window.location.href = '/index.html';
 
 let currentUser = null;
 let currentPatientId = null;
+let consultPatientId = null;
+let extractedVitals = [];
+let extractedLabs = [];
 
 async function apiRequest(endpoint, options = {}) {
     const headers = { 'Content-Type': 'application/json', ...options.headers };
@@ -237,7 +233,6 @@ function showView(id) {
 
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
-// ---------- Load user ----------
 async function loadUser() {
     const res = await apiRequest('/auth/me');
     if (res.ok) {
@@ -265,7 +260,6 @@ function applyRolePermissions() {
     if (taskBtn) taskBtn.style.display = (role === 'HeadNurse') ? 'inline-block' : 'none';
 }
 
-// ---------- Ollama status ----------
 async function checkOllama() {
     try {
         const res = await apiRequest('/health');
@@ -283,7 +277,6 @@ async function checkOllama() {
     } catch(e) { document.getElementById('ollama-status').textContent = '❌ Backend unreachable'; }
 }
 
-// ---------- Dashboard ----------
 async function loadDashboard() {
     const res = await apiRequest('/ipd/patients');
     if (!res.ok) return;
@@ -310,7 +303,6 @@ async function loadDashboard() {
     document.getElementById('alert-banner').style.display = hasAbnormal ? 'block' : 'none';
 }
 
-// ---------- Patient Detail ----------
 async function showPatientDetail(patientId) {
     currentPatientId = patientId;
     const res = await apiRequest(`/patients/${patientId}/details`);
@@ -384,7 +376,6 @@ async function showPatientDetail(patientId) {
             `).join('') || '<p style="color:#64748b;">No nursing notes.</p>'}
         </div>
     `;
-    // Tab switching
     content.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             content.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -396,7 +387,6 @@ async function showPatientDetail(patientId) {
     document.getElementById('patient-detail-modal').style.display = 'flex';
 }
 
-// ---------- Edit Patient ----------
 async function editPatient(patientId) {
     const newWard = prompt('Enter new Ward:');
     if (newWard === null) return;
@@ -418,12 +408,6 @@ async function editPatient(patientId) {
     }
 }
 
-// ========== NURSING CONSULT (Voice-first, like OPD) ==========
-
-let consultPatientId = null;
-let extractedVitals = [];
-let extractedLabs = [];
-
 function openNursingConsult(patientId) {
     consultPatientId = patientId;
     apiRequest(`/patients/${patientId}/details`).then(res => {
@@ -436,7 +420,6 @@ function openNursingConsult(patientId) {
         document.getElementById('nursing-consult-bed').textContent = p.bed;
         document.getElementById('nursing-consult-patient').textContent = `Nursing Notes – ${p.name}`;
     }).catch(err => alert('Could not load patient: ' + err.message));
-
     document.getElementById('nursing-voice-text').value = '';
     document.getElementById('nursing-note-text').value = '';
     document.getElementById('nursing-extracted').style.display = 'none';
@@ -448,7 +431,6 @@ function openNursingConsult(patientId) {
     document.getElementById('nursing-consult-modal').style.display = 'flex';
 }
 
-// Voice recognition for the narrative
 let nursingVoiceRecognition = null;
 document.getElementById('nursing-voice-btn').addEventListener('click', () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -492,7 +474,6 @@ document.getElementById('nursing-voice-btn').addEventListener('click', () => {
     nursingVoiceRecognition.start();
 });
 
-// Process the narrative
 document.getElementById('nursing-process-btn').addEventListener('click', async () => {
     const voiceText = document.getElementById('nursing-voice-text').value.trim();
     if (!voiceText) {
@@ -526,7 +507,6 @@ document.getElementById('nursing-process-btn').addEventListener('click', async (
     }
 });
 
-// Render vitals as editable list
 function renderVitals() {
     const container = document.getElementById('vital-list');
     container.innerHTML = '';
@@ -561,7 +541,6 @@ function addVitalItem() {
     renderVitals();
 }
 
-// Render labs as editable list
 function renderLabs() {
     const container = document.getElementById('lab-list');
     container.innerHTML = '';
@@ -595,25 +574,19 @@ function addLabItem() {
     renderLabs();
 }
 
-// Save nursing notes
 document.getElementById('nursing-save-btn').addEventListener('click', async () => {
     const patientId = consultPatientId;
     if (!patientId) { alert('No patient selected'); return; }
-
     const vitalsToSave = extractedVitals.filter(v => v.parameter.trim() !== '');
     const noteText = document.getElementById('nursing-note-text').value.trim();
-
     if (vitalsToSave.length === 0 && !noteText) {
         alert('Please record at least one vital or a nursing note.');
         return;
     }
-
     const saveBtn = document.getElementById('nursing-save-btn');
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
-
     try {
-        // Save each vital
         for (const v of vitalsToSave) {
             await apiRequest('/ipd/vitals', {
                 method: 'POST',
@@ -629,8 +602,6 @@ document.getElementById('nursing-save-btn').addEventListener('click', async () =
                 })
             });
         }
-
-        // Save nursing note
         if (noteText) {
             await apiRequest('/nursing-notes', {
                 method: 'POST',
@@ -644,7 +615,6 @@ document.getElementById('nursing-save-btn').addEventListener('click', async () =
                 })
             });
         }
-
         alert('Nursing notes saved successfully!');
         closeModal('nursing-consult-modal');
         loadDashboard();
@@ -657,7 +627,6 @@ document.getElementById('nursing-save-btn').addEventListener('click', async () =
     }
 });
 
-// ---------- Admit ----------
 document.getElementById('show-admit-btn').addEventListener('click', () => document.getElementById('admit-modal').style.display = 'flex');
 document.getElementById('admit-submit').addEventListener('click', async () => {
     const name = document.getElementById('admit-name').value;
@@ -681,7 +650,6 @@ document.getElementById('admit-submit').addEventListener('click', async () => {
     }
 });
 
-// ---------- Assign ----------
 async function loadAssignOptions() {
     const [patientsRes, nursesRes] = await Promise.all([
         apiRequest('/ipd/patients'),
@@ -711,7 +679,6 @@ document.getElementById('assign-btn').addEventListener('click', async () => {
     document.getElementById('assign-result').textContent = res.ok ? '✅ Assigned' : '❌ ' + (data.detail || 'Failed');
 });
 
-// ---------- Tasks ----------
 document.getElementById('show-task-btn').addEventListener('click', () => document.getElementById('task-modal').style.display = 'flex');
 
 async function loadTaskOptions() {
@@ -789,7 +756,6 @@ async function updateTask(taskId, status) {
     }
 }
 
-// ---------- Sidebar ----------
 document.querySelectorAll('.sidebar button').forEach(b => {
     b.addEventListener('click', () => {
         const view = b.dataset.view;
@@ -801,13 +767,11 @@ document.querySelectorAll('.sidebar button').forEach(b => {
     });
 });
 
-// ---------- Logout ----------
 document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.clear();
     window.location.href = '/index.html';
 });
 
-// ---------- Start ----------
 loadUser();
 </script>
 </body>
