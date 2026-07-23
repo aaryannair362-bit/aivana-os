@@ -11,15 +11,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from passlib.context import CryptContext
 from jose import jwt
-from groq import Groq
 import dotenv
 
 dotenv.load_dotenv()
 
 # ---------- Database ----------
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////tmp/aivana.db")
-
-# Handle PostgreSQL vs SQLite connection args
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
@@ -28,7 +25,7 @@ engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ---------- Models (same as before) ----------
+# ---------- Models ----------
 class Organization(Base):
     __tablename__ = "organizations"
     id = Column(Integer, primary_key=True)
@@ -238,14 +235,10 @@ app.add_middleware(
 )
 
 # ---------- Groq ----------
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
-groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
-
 class ScribeEngine:
     def __init__(self):
-        self.client = groq_client
-        self.model = GROQ_MODEL
+        self._client = None
+        self.model = os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
         self.system_prompt = """You are an exceptionally precise clinical transcription assistant (scribe) for a General Medicine OPD clinician.
 Analyze the doctor-patient conversation transcript and synthesize an accurate clinical prescription draft with maximum fidelity to the spoken facts.
 
@@ -261,10 +254,23 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
 5. Handle spoken names, medicines, or measurements gracefully
 6. CLINICAL FINDINGS IN HPI: Any clinical findings mentioned MUST be explicitly included in the "hpi" field"""
 
+    def _get_client(self):
+        if self._client is None:
+            api_key = os.getenv("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY environment variable not set")
+            try:
+                from groq import Groq
+                self._client = Groq(api_key=api_key)
+            except ImportError:
+                raise ImportError("groq package not installed")
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize Groq client: {e}")
+        return self._client
+
     def _generate(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
-        if not self.client:
-            raise ValueError("Groq API key not set")
-        response = self.client.chat.completions.create(
+        client = self._get_client()
+        response = client.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": system or self.system_prompt},
@@ -348,7 +354,11 @@ Keep drug names in English. Translate descriptions, instructions, and test names
         return result
 
     def is_available(self) -> bool:
-        return self.client is not None
+        try:
+            self._get_client()
+            return True
+        except:
+            return False
 
 scribe = ScribeEngine()
 
@@ -386,7 +396,7 @@ def startup():
     if not scribe.is_available():
         print("⚠️ Groq API key not configured. AI features disabled.")
     else:
-        print(f"✅ Groq ready with {GROQ_MODEL}")
+        print(f"✅ Groq ready with {scribe.model}")
 
 # ---------- Helper functions ----------
 def is_head_nurse(user: dict) -> bool:
@@ -1183,7 +1193,7 @@ def health():
     return {
         "status": "healthy",
         "groq_available": scribe.is_available(),
-        "groq_model": GROQ_MODEL
+        "groq_model": scribe.model
     }
 
 @app.get("/")
