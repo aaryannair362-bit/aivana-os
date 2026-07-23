@@ -362,37 +362,44 @@ Keep drug names in English. Translate descriptions, instructions, and test names
 
 scribe = ScribeEngine()
 
-# ---------- Create default admin ----------
-def create_default_user():
+# ---------- Default admin creation ----------
+def ensure_default_admin():
     db = SessionLocal()
     try:
-        if db.query(User).count() == 0:
-            org = Organization(name="Default Hospital")
-            db.add(org)
-            db.flush()
-            password_hash = get_password_hash("Demo@123456")
-            user = User(
-                email="demo@aivana.com",
-                password_hash=password_hash,
-                role="Admin",
-                organization_id=org.id,
-                status="Active"
-            )
-            db.add(user)
-            db.flush()
-            history = PasswordHistory(user_id=user.id, password_hash=password_hash)
-            db.add(history)
-            db.commit()
-            print("Default admin created: demo@aivana.com / Demo@123456")
+        # Check if admin exists
+        admin = db.query(User).filter(User.email == "demo@aivana.com").first()
+        if admin:
+            return
+        # Create organization
+        org = Organization(name="Default Hospital")
+        db.add(org)
+        db.flush()
+        # Create admin user
+        password_hash = get_password_hash("Demo@123456")
+        user = User(
+            email="demo@aivana.com",
+            password_hash=password_hash,
+            role="Admin",
+            organization_id=org.id,
+            status="Active"
+        )
+        db.add(user)
+        db.flush()
+        history = PasswordHistory(user_id=user.id, password_hash=password_hash)
+        db.add(history)
+        db.commit()
+        print("Default admin created: demo@aivana.com / Demo@123456")
     except Exception as e:
-        print(f"Error creating default user: {e}")
+        print(f"Error creating default admin: {e}")
+        db.rollback()
     finally:
         db.close()
 
+# Call on startup
 @app.on_event("startup")
 def startup():
     print("Starting AIVANA Hospital System")
-    create_default_user()
+    ensure_default_admin()
     if not scribe.is_available():
         print("⚠️ Groq API key not configured. AI features disabled.")
     else:
@@ -474,9 +481,16 @@ async def login(request: Request, db: Session = Depends(get_db)):
         password = body.get("password")
         if not email or not password:
             raise HTTPException(400, "Email and password required")
+
+        # Ensure default admin exists if the email matches
+        if email == "demo@aivana.com":
+            ensure_default_admin()
+
         user = db.query(User).filter(User.email == email).first()
         if not user or not user.password_hash:
             raise HTTPException(401, "Invalid credentials")
+
+        # Lockout check
         if user.status == "Locked":
             if user.lock_until and user.lock_until > datetime.utcnow():
                 remaining = int((user.lock_until - datetime.utcnow()).total_seconds() / 60)
@@ -486,6 +500,7 @@ async def login(request: Request, db: Session = Depends(get_db)):
                 user.failed_login_attempts = 0
                 user.lock_until = None
                 db.commit()
+
         if not verify_password(password, user.password_hash):
             user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
             if user.failed_login_attempts >= 5:
@@ -496,11 +511,13 @@ async def login(request: Request, db: Session = Depends(get_db)):
             db.commit()
             remaining = 5 - user.failed_login_attempts
             raise HTTPException(401, f"Invalid credentials. {remaining} attempts remaining")
+
         user.failed_login_attempts = 0
         user.lock_until = None
         user.last_active = datetime.utcnow()
         user.ip = request.headers.get("x-forwarded-for", request.client.host)
         db.commit()
+
         token_data = {"user_id": user.id, "email": user.email, "role": user.role, "organization_id": user.organization_id}
         log_audit(db, user.id, email, user.organization_id, "login", "auth/login", "Success")
         return {
