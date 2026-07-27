@@ -1,12 +1,12 @@
 import json
-from groq import Groq 
+import requests
 from .config import settings
 
 class ScribeEngine:
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
         self.model = settings.GROQ_MODEL
-        self.client = Groq(api_key=self.api_key) if self.api_key else None  
+        self.base_url = "https://api.groq.com/openai/v1/chat/completions"
         self.system_prompt = """You are an exceptionally precise clinical transcription assistant (scribe) for a General Medicine OPD clinician.
 Analyze the doctor-patient conversation transcript and synthesize an accurate clinical prescription draft with maximum fidelity to the spoken facts.
 
@@ -22,26 +22,33 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
 5. Handle spoken names, medicines, or measurements gracefully
 6. CLINICAL FINDINGS IN HPI: Any clinical findings mentioned MUST be explicitly included in the "hpi" field"""
 
-    def _generate(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
-        if not self.client:
+    def _call_groq_api(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
+        if not self.api_key:
             raise ValueError("Groq API key not configured. Set GROQ_API_KEY in environment.")
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system or self.system_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": temperature,
+            "max_tokens": 2000
+        }
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system or self.system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=temperature,
-                max_tokens=2000
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            print(f"Groq error: {e}")
+            response = requests.post(self.base_url, headers=headers, json=payload, timeout=60)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except requests.exceptions.RequestException as e:
+            print(f"Groq API error: {e}")
             return ""
 
     def _generate_json(self, prompt: str, system: str = None, temperature: float = 0.3) -> dict:
-        response = self._generate(prompt, system, temperature)
+        response = self._call_groq_api(prompt, system, temperature)
         response = response.strip()
         if response.startswith("```json"):
             response = response[7:]
@@ -93,7 +100,7 @@ Current Prescription Draft State:
 Doctor asks: "{query or 'Optimize this prescription draft, check for drug interactions, check for missing values, and suggest improvements.'}"
 
 Provide clinical, expert-level feedback. Suggest changes or additions directly. Your tone must be supportive, professional, and clinical. Keep it concise."""
-        return self._generate(prompt, temperature=0.7)
+        return self._call_groq_api(prompt, temperature=0.7)
 
     def translate_prescription(self, draft: dict, target_language: str) -> dict:
         if target_language == "English":
@@ -118,8 +125,10 @@ Keep drug names in English. Translate descriptions, instructions, and test names
         if not self.api_key:
             return False
         try:
-            self.client.models.list()
-            return True
+            # Quick test call
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+            resp = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=10)
+            return resp.status_code == 200
         except Exception:
             return False
 
