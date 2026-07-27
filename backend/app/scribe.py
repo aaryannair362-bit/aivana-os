@@ -1,12 +1,12 @@
 import json
-import groq
+from groq import Groq 
 from .config import settings
 
 class ScribeEngine:
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
         self.model = settings.GROQ_MODEL
-        self.client = groq.Groq(api_key=self.api_key) if self.api_key else None
+        self.client = Groq(api_key=self.api_key) if self.api_key else None  
         self.system_prompt = """You are an exceptionally precise clinical transcription assistant (scribe) for a General Medicine OPD clinician.
 Analyze the doctor-patient conversation transcript and synthesize an accurate clinical prescription draft with maximum fidelity to the spoken facts.
 
@@ -24,7 +24,7 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
 
     def _generate(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
         if not self.client:
-            raise ValueError("Groq API key not configured. Set GROQ_API_KEY in .env file.")
+            raise ValueError("Groq API key not configured. Set GROQ_API_KEY in environment.")
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
