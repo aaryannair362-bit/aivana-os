@@ -7,6 +7,10 @@ class ScribeEngine:
         self.api_key = settings.GROQ_API_KEY
         self.model = settings.GROQ_MODEL
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
+        print(f"DEBUG: GROQ_API_KEY present: {bool(self.api_key)}")
+        print(f"DEBUG: GROQ_API_KEY length: {len(self.api_key) if self.api_key else 0}")
+        print(f"DEBUG: GROQ_MODEL: {self.model}")
+
         self.system_prompt = """You are an exceptionally precise clinical transcription assistant (scribe) for a General Medicine OPD clinician.
 Analyze the doctor-patient conversation transcript and synthesize an accurate clinical prescription draft with maximum fidelity to the spoken facts.
 
@@ -24,7 +28,9 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
 
     def _call_groq_api(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
         if not self.api_key:
+            print("ERROR: No API key available in _call_groq_api")
             raise ValueError("Groq API key not configured. Set GROQ_API_KEY in environment.")
+
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -38,13 +44,18 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
             "temperature": temperature,
             "max_tokens": 2000
         }
+
+        print(f"DEBUG: Calling Groq API with model: {self.model}")
         try:
             response = requests.post(self.base_url, headers=headers, json=payload, timeout=60)
+            print(f"DEBUG: Groq API response status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
         except requests.exceptions.RequestException as e:
             print(f"Groq API error: {e}")
+            if hasattr(e, 'response') and e.response:
+                print(f"Response body: {e.response.text}")
             return ""
 
     def _generate_json(self, prompt: str, system: str = None, temperature: float = 0.3) -> dict:
@@ -123,16 +134,19 @@ Keep drug names in English. Translate descriptions, instructions, and test names
 
     def is_available(self) -> bool:
         if not self.api_key:
+            print("DEBUG: is_available = False (no API key)")
             return False
         try:
-            # Quick test call
             headers = {"Authorization": f"Bearer {self.api_key}"}
             resp = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=10)
+            print(f"DEBUG: is_available test response: {resp.status_code}")
             return resp.status_code == 200
-        except Exception:
+        except Exception as e:
+            print(f"DEBUG: is_available exception: {e}")
             return False
 
     def pull_model(self) -> bool:
         return True
 
 scribe = ScribeEngine()
+print(f"DEBUG: ScribeEngine created. Available: {scribe.is_available()}")
