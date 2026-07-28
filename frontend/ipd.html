@@ -38,7 +38,7 @@
         .form-group textarea { min-height: 60px; resize: vertical; }
         .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #06b6d4; }
         .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-        .modal-content { background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 24px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal-content { background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .modal-header h2 { font-size: 18px; }
         .modal-close { background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; }
@@ -58,6 +58,8 @@
         .vital-item input:focus, .lab-item input:focus { border-color: #06b6d4; outline: none; }
         .del-btn { background: none; border: none; color: #f87171; cursor: pointer; font-size: 18px; }
         .del-btn:hover { color: #dc2626; }
+        .patient-list-item { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; cursor: pointer; transition: border-color 0.2s; }
+        .patient-list-item:hover { border-color: #06b6d4; }
     </style>
 </head>
 <body>
@@ -104,6 +106,8 @@
         </section>
     </main>
 </div>
+
+<!-- Patient Detail Modal -->
 <div id="patient-detail-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header">
@@ -113,6 +117,8 @@
         <div id="detail-content"></div>
     </div>
 </div>
+
+<!-- Admit Modal -->
 <div id="admit-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header"><h2>Admit Patient</h2><button class="modal-close" onclick="closeModal('admit-modal')">&times;</button></div>
@@ -125,6 +131,8 @@
         <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('admit-modal')">Cancel</button><button class="btn-primary" id="admit-submit">Admit</button></div>
     </div>
 </div>
+
+<!-- Task Modal -->
 <div id="task-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header"><h2>Create Task</h2><button class="modal-close" onclick="closeModal('task-modal')">&times;</button></div>
@@ -135,6 +143,8 @@
         <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('task-modal')">Cancel</button><button class="btn-primary" id="task-submit">Create</button></div>
     </div>
 </div>
+
+<!-- Nursing Notes Modal -->
 <div id="nursing-consult-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header">
@@ -179,15 +189,18 @@
         </div>
     </div>
 </div>
+
 <script>
 const API_BASE = '/api';
 const accessToken = localStorage.getItem('access_token');
 if (!accessToken) window.location.href = '/index.html';
+
 let currentUser = null;
 let currentPatientId = null;
 let consultPatientId = null;
 let extractedVitals = [];
 let extractedLabs = [];
+
 async function apiRequest(endpoint, options = {}) {
     const headers = { 'Content-Type': 'application/json', ...options.headers };
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
@@ -212,13 +225,16 @@ async function apiRequest(endpoint, options = {}) {
     }
     return res;
 }
+
 function showView(id) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(id + '-view').classList.add('active');
     document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
     document.querySelector(`.sidebar button[data-view="${id}"]`)?.classList.add('active');
 }
+
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
 async function loadUser() {
     const res = await apiRequest('/auth/me');
     if (res.ok) {
@@ -234,6 +250,7 @@ async function loadUser() {
         window.location.href = '/index.html';
     }
 }
+
 function applyRolePermissions() {
     const role = currentUser.role;
     document.getElementById('patients-tab').style.display = (role === 'HeadNurse' || role === 'NursingStation') ? 'block' : 'none';
@@ -244,6 +261,7 @@ function applyRolePermissions() {
     const taskBtn = document.getElementById('show-task-btn');
     if (taskBtn) taskBtn.style.display = (role === 'HeadNurse') ? 'inline-block' : 'none';
 }
+
 async function checkOllama() {
     try {
         const res = await apiRequest('/health');
@@ -260,6 +278,8 @@ async function checkOllama() {
         }
     } catch(e) { document.getElementById('ollama-status').textContent = '❌ Backend unreachable'; }
 }
+
+// ---- DASHBOARD ----
 async function loadDashboard() {
     const res = await apiRequest('/ipd/patients');
     if (!res.ok) return;
@@ -285,6 +305,27 @@ async function loadDashboard() {
     const hasAbnormal = patients.some(p => p.abnormal);
     document.getElementById('alert-banner').style.display = hasAbnormal ? 'block' : 'none';
 }
+
+// ---- PATIENTS LIST (for Head Nurse) ----
+async function loadPatients() {
+    const res = await apiRequest('/ipd/patients');
+    if (!res.ok) return;
+    const patients = await res.json();
+    const container = document.getElementById('patient-list');
+    if (!patients || patients.length === 0) {
+        container.innerHTML = '<p style="color:#64748b;">No patients admitted.</p>';
+        return;
+    }
+    container.innerHTML = patients.map(p => `
+        <div class="patient-list-item" onclick="showPatientDetail(${p.id})">
+            <div><strong>${p.name}</strong> (${p.age || 'N/A'}y, ${p.gender || 'N/A'}) - ${p.ward} - Bed ${p.bed || ''}</div>
+            <div style="color:#94a3b8;">${p.diagnosis || ''}</div>
+            <div style="font-size:12px;color:#64748b;">Pending Tasks: ${p.pending_tasks || 0}</div>
+        </div>
+    `).join('');
+}
+
+// ---- PATIENT DETAIL ----
 async function showPatientDetail(patientId) {
     currentPatientId = patientId;
     const res = await apiRequest(`/patients/${patientId}/details`);
@@ -368,6 +409,8 @@ async function showPatientDetail(patientId) {
     });
     document.getElementById('patient-detail-modal').style.display = 'flex';
 }
+
+// ---- Edit Patient ----
 async function editPatient(patientId) {
     const newWard = prompt('Enter new Ward:');
     if (newWard === null) return;
@@ -383,11 +426,14 @@ async function editPatient(patientId) {
         alert('Patient updated');
         showPatientDetail(patientId);
         loadDashboard();
+        loadPatients();
     } else {
         const err = await res.json();
         alert(err.detail || 'Update failed');
     }
 }
+
+// ---- Nursing Consult ----
 function openNursingConsult(patientId) {
     consultPatientId = patientId;
     apiRequest(`/patients/${patientId}/details`).then(res => {
@@ -410,6 +456,8 @@ function openNursingConsult(patientId) {
     document.getElementById('nursing-voice-status').textContent = 'Click mic to speak';
     document.getElementById('nursing-consult-modal').style.display = 'flex';
 }
+
+// ---- Nursing Voice ----
 let nursingVoiceRecognition = null;
 document.getElementById('nursing-voice-btn').addEventListener('click', () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -452,6 +500,8 @@ document.getElementById('nursing-voice-btn').addEventListener('click', () => {
     };
     nursingVoiceRecognition.start();
 });
+
+// ---- Process Nursing Narrative ----
 document.getElementById('nursing-process-btn').addEventListener('click', async () => {
     const voiceText = document.getElementById('nursing-voice-text').value.trim();
     if (!voiceText) {
@@ -484,6 +534,7 @@ document.getElementById('nursing-process-btn').addEventListener('click', async (
         btn.textContent = '⚙️ Process';
     }
 });
+
 function renderVitals() {
     const container = document.getElementById('vital-list');
     container.innerHTML = '';
@@ -503,6 +554,7 @@ function renderVitals() {
         container.appendChild(div);
     });
 }
+
 function updateVital(idx, key, val) {
     extractedVitals[idx][key] = val;
 }
@@ -514,6 +566,7 @@ function addVitalItem() {
     extractedVitals.push({ parameter: '', value: '', unit: '' });
     renderVitals();
 }
+
 function renderLabs() {
     const container = document.getElementById('lab-list');
     container.innerHTML = '';
@@ -543,6 +596,8 @@ function addLabItem() {
     extractedLabs.push({ test: '', result: '' });
     renderLabs();
 }
+
+// ---- Save Nursing Notes ----
 document.getElementById('nursing-save-btn').addEventListener('click', async () => {
     const patientId = consultPatientId;
     if (!patientId) { alert('No patient selected'); return; }
@@ -587,6 +642,7 @@ document.getElementById('nursing-save-btn').addEventListener('click', async () =
         alert('Nursing notes saved successfully!');
         closeModal('nursing-consult-modal');
         loadDashboard();
+        loadPatients();
         if (currentPatientId) showPatientDetail(currentPatientId);
     } catch (err) {
         alert('Error: ' + err.message);
@@ -595,6 +651,8 @@ document.getElementById('nursing-save-btn').addEventListener('click', async () =
         saveBtn.textContent = '💾 Save Nursing Notes';
     }
 });
+
+// ---- Admit Patient (Nursing Station only) ----
 document.getElementById('show-admit-btn').addEventListener('click', () => document.getElementById('admit-modal').style.display = 'flex');
 document.getElementById('admit-submit').addEventListener('click', async () => {
     const name = document.getElementById('admit-name').value;
@@ -612,11 +670,14 @@ document.getElementById('admit-submit').addEventListener('click', async () => {
         closeModal('admit-modal');
         alert('Patient admitted');
         loadDashboard();
+        loadPatients();
     } else {
         const err = await res.json();
         alert(err.detail || 'Failed');
     }
 });
+
+// ---- Assign Patient (Head Nurse only) ----
 async function loadAssignOptions() {
     const [patientsRes, nursesRes] = await Promise.all([
         apiRequest('/ipd/patients'),
@@ -644,6 +705,8 @@ document.getElementById('assign-btn').addEventListener('click', async () => {
     const data = await res.json();
     document.getElementById('assign-result').textContent = res.ok ? '✅ Assigned' : '❌ ' + (data.detail || 'Failed');
 });
+
+// ---- Tasks ----
 document.getElementById('show-task-btn').addEventListener('click', () => document.getElementById('task-modal').style.display = 'flex');
 async function loadTaskOptions() {
     const res = await apiRequest('/ipd/patients');
@@ -716,6 +779,8 @@ async function updateTask(taskId, status) {
         alert(err.detail || 'Failed');
     }
 }
+
+// ---- Sidebar ----
 document.querySelectorAll('.sidebar button').forEach(b => {
     b.addEventListener('click', () => {
         const view = b.dataset.view;
@@ -726,10 +791,14 @@ document.querySelectorAll('.sidebar button').forEach(b => {
         else if (view === 'tasks') { loadTaskOptions(); loadTasks(); }
     });
 });
+
+// ---- Logout ----
 document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.clear();
     window.location.href = '/index.html';
 });
+
+// ---- Start ----
 loadUser();
 </script>
 </body>
