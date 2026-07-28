@@ -104,8 +104,6 @@
         </section>
     </main>
 </div>
-
-<!-- Patient Detail Modal -->
 <div id="patient-detail-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header">
@@ -115,8 +113,6 @@
         <div id="detail-content"></div>
     </div>
 </div>
-
-<!-- Admit Modal -->
 <div id="admit-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header"><h2>Admit Patient</h2><button class="modal-close" onclick="closeModal('admit-modal')">&times;</button></div>
@@ -129,8 +125,6 @@
         <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('admit-modal')">Cancel</button><button class="btn-primary" id="admit-submit">Admit</button></div>
     </div>
 </div>
-
-<!-- Task Modal -->
 <div id="task-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header"><h2>Create Task</h2><button class="modal-close" onclick="closeModal('task-modal')">&times;</button></div>
@@ -141,8 +135,6 @@
         <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('task-modal')">Cancel</button><button class="btn-primary" id="task-submit">Create</button></div>
     </div>
 </div>
-
-<!-- Nursing Notes Modal -->
 <div id="nursing-consult-modal" class="modal" style="display:none;">
     <div class="modal-content">
         <div class="modal-header">
@@ -187,18 +179,15 @@
         </div>
     </div>
 </div>
-
 <script>
 const API_BASE = '/api';
 const accessToken = localStorage.getItem('access_token');
 if (!accessToken) window.location.href = '/index.html';
-
 let currentUser = null;
 let currentPatientId = null;
 let consultPatientId = null;
 let extractedVitals = [];
 let extractedLabs = [];
-
 async function apiRequest(endpoint, options = {}) {
     const headers = { 'Content-Type': 'application/json', ...options.headers };
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
@@ -223,16 +212,13 @@ async function apiRequest(endpoint, options = {}) {
     }
     return res;
 }
-
 function showView(id) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(id + '-view').classList.add('active');
     document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
     document.querySelector(`.sidebar button[data-view="${id}"]`)?.classList.add('active');
 }
-
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-
 async function loadUser() {
     const res = await apiRequest('/auth/me');
     if (res.ok) {
@@ -248,7 +234,6 @@ async function loadUser() {
         window.location.href = '/index.html';
     }
 }
-
 function applyRolePermissions() {
     const role = currentUser.role;
     document.getElementById('patients-tab').style.display = (role === 'HeadNurse' || role === 'NursingStation') ? 'block' : 'none';
@@ -259,7 +244,6 @@ function applyRolePermissions() {
     const taskBtn = document.getElementById('show-task-btn');
     if (taskBtn) taskBtn.style.display = (role === 'HeadNurse') ? 'inline-block' : 'none';
 }
-
 async function checkOllama() {
     try {
         const res = await apiRequest('/health');
@@ -276,7 +260,6 @@ async function checkOllama() {
         }
     } catch(e) { document.getElementById('ollama-status').textContent = '❌ Backend unreachable'; }
 }
-
 async function loadDashboard() {
     const res = await apiRequest('/ipd/patients');
     if (!res.ok) return;
@@ -302,7 +285,6 @@ async function loadDashboard() {
     const hasAbnormal = patients.some(p => p.abnormal);
     document.getElementById('alert-banner').style.display = hasAbnormal ? 'block' : 'none';
 }
-
 async function showPatientDetail(patientId) {
     currentPatientId = patientId;
     const res = await apiRequest(`/patients/${patientId}/details`);
@@ -386,7 +368,6 @@ async function showPatientDetail(patientId) {
     });
     document.getElementById('patient-detail-modal').style.display = 'flex';
 }
-
 async function editPatient(patientId) {
     const newWard = prompt('Enter new Ward:');
     if (newWard === null) return;
@@ -407,7 +388,6 @@ async function editPatient(patientId) {
         alert(err.detail || 'Update failed');
     }
 }
-
 function openNursingConsult(patientId) {
     consultPatientId = patientId;
     apiRequest(`/patients/${patientId}/details`).then(res => {
@@ -430,7 +410,6 @@ function openNursingConsult(patientId) {
     document.getElementById('nursing-voice-status').textContent = 'Click mic to speak';
     document.getElementById('nursing-consult-modal').style.display = 'flex';
 }
-
 let nursingVoiceRecognition = null;
 document.getElementById('nursing-voice-btn').addEventListener('click', () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
@@ -473,7 +452,6 @@ document.getElementById('nursing-voice-btn').addEventListener('click', () => {
     };
     nursingVoiceRecognition.start();
 });
-
 document.getElementById('nursing-process-btn').addEventListener('click', async () => {
     const voiceText = document.getElementById('nursing-voice-text').value.trim();
     if (!voiceText) {
@@ -506,7 +484,6 @@ document.getElementById('nursing-process-btn').addEventListener('click', async (
         btn.textContent = '⚙️ Process';
     }
 });
-
 function renderVitals() {
     const container = document.getElementById('vital-list');
     container.innerHTML = '';
@@ -526,21 +503,17 @@ function renderVitals() {
         container.appendChild(div);
     });
 }
-
 function updateVital(idx, key, val) {
     extractedVitals[idx][key] = val;
 }
-
 function removeVital(idx) {
     extractedVitals.splice(idx, 1);
     renderVitals();
 }
-
 function addVitalItem() {
     extractedVitals.push({ parameter: '', value: '', unit: '' });
     renderVitals();
 }
-
 function renderLabs() {
     const container = document.getElementById('lab-list');
     container.innerHTML = '';
@@ -559,21 +532,17 @@ function renderLabs() {
         container.appendChild(div);
     });
 }
-
 function updateLab(idx, key, val) {
     extractedLabs[idx][key] = val;
 }
-
 function removeLab(idx) {
     extractedLabs.splice(idx, 1);
     renderLabs();
 }
-
 function addLabItem() {
     extractedLabs.push({ test: '', result: '' });
     renderLabs();
 }
-
 document.getElementById('nursing-save-btn').addEventListener('click', async () => {
     const patientId = consultPatientId;
     if (!patientId) { alert('No patient selected'); return; }
@@ -626,7 +595,6 @@ document.getElementById('nursing-save-btn').addEventListener('click', async () =
         saveBtn.textContent = '💾 Save Nursing Notes';
     }
 });
-
 document.getElementById('show-admit-btn').addEventListener('click', () => document.getElementById('admit-modal').style.display = 'flex');
 document.getElementById('admit-submit').addEventListener('click', async () => {
     const name = document.getElementById('admit-name').value;
@@ -649,7 +617,6 @@ document.getElementById('admit-submit').addEventListener('click', async () => {
         alert(err.detail || 'Failed');
     }
 });
-
 async function loadAssignOptions() {
     const [patientsRes, nursesRes] = await Promise.all([
         apiRequest('/ipd/patients'),
@@ -666,7 +633,6 @@ async function loadAssignOptions() {
         sel.innerHTML = nurses.map(n => `<option value="${n.id}">${n.email}</option>`).join('');
     }
 }
-
 document.getElementById('assign-btn').addEventListener('click', async () => {
     const patient_id = document.getElementById('assign-patient').value;
     const nurse_id = document.getElementById('assign-nurse').value;
@@ -678,9 +644,7 @@ document.getElementById('assign-btn').addEventListener('click', async () => {
     const data = await res.json();
     document.getElementById('assign-result').textContent = res.ok ? '✅ Assigned' : '❌ ' + (data.detail || 'Failed');
 });
-
 document.getElementById('show-task-btn').addEventListener('click', () => document.getElementById('task-modal').style.display = 'flex');
-
 async function loadTaskOptions() {
     const res = await apiRequest('/ipd/patients');
     if (res.ok) {
@@ -695,7 +659,6 @@ async function loadTaskOptions() {
         sel.innerHTML = `<option value="">Unassigned</option>` + nurses.map(n => `<option value="${n.id}">${n.email}</option>`).join('');
     }
 }
-
 document.getElementById('task-submit').addEventListener('click', async () => {
     const patient_id = document.getElementById('task-patient').value;
     const nurse_id = document.getElementById('task-nurse').value;
@@ -715,7 +678,6 @@ document.getElementById('task-submit').addEventListener('click', async () => {
         alert(err.detail || 'Failed');
     }
 });
-
 async function loadTasks() {
     const patientsRes = await apiRequest('/ipd/patients');
     if (!patientsRes.ok) return;
@@ -740,7 +702,6 @@ async function loadTasks() {
         </div>
     `).join('');
 }
-
 async function updateTask(taskId, status) {
     const res = await apiRequest(`/ipd/tasks/${taskId}`, {
         method: 'PATCH',
@@ -755,7 +716,6 @@ async function updateTask(taskId, status) {
         alert(err.detail || 'Failed');
     }
 }
-
 document.querySelectorAll('.sidebar button').forEach(b => {
     b.addEventListener('click', () => {
         const view = b.dataset.view;
@@ -766,12 +726,10 @@ document.querySelectorAll('.sidebar button').forEach(b => {
         else if (view === 'tasks') { loadTaskOptions(); loadTasks(); }
     });
 });
-
 document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.clear();
     window.location.href = '/index.html';
 });
-
 loadUser();
 </script>
 </body>

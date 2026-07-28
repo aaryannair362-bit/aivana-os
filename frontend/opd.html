@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AIVANA OPD Scribe - Doctor</title>
     <style>
-        /* Reset and base styles */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e2e8f0; min-height: 100vh; }
         .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #111827; border-bottom: 1px solid #1e293b; flex-wrap: wrap; gap: 10px; }
@@ -20,16 +19,12 @@
         .content { flex: 1; padding: 20px; overflow-y: auto; max-height: calc(100vh - 80px); }
         .view { display: none; }
         .view.active { display: block; }
-
-        /* Control bar and presets */
         .control-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
         .control-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
         .control-bar select { padding: 6px 10px; background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
         .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
         .preset-btn { padding: 6px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 20px; color: #94a3b8; font-size: 12px; cursor: pointer; transition: all 0.2s; }
         .preset-btn:hover { background: #2d3748; color: #e2e8f0; border-color: #06b6d4; }
-
-        /* Buttons */
         .btn-primary { padding: 8px 20px; background: linear-gradient(135deg, #06b6d4, #0891b2); border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
         .btn-primary:hover { opacity: 0.9; }
         .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -38,8 +33,6 @@
         .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid #334155; border-radius: 8px; color: #94a3b8; font-size: 12px; cursor: pointer; }
         .btn-outline:hover { border-color: #64748b; color: #e2e8f0; }
         .btn-danger { padding: 6px 14px; background: #dc2626; border: none; border-radius: 8px; color: white; cursor: pointer; }
-
-        /* Transcript and draft */
         #transcript-input { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; color: #e2e8f0; font-family: monospace; font-size: 13px; resize: vertical; min-height: 80px; outline: none; margin-bottom: 8px; }
         #transcript-input:focus { border-color: #06b6d4; }
         #transcript-input:disabled { opacity: 0.6; }
@@ -51,7 +44,6 @@
         #mic-status.listening { background: #dc2626; color: white; animation: pulse 1s infinite; }
         #mic-status.transcribing { background: #f59e0b; color: #0a0e17; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
         .prescription-draft { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin-top: 16px; }
         .prescription-draft h2 { font-size: 18px; margin-bottom: 12px; }
         .draft-fields > div { margin-bottom: 12px; }
@@ -64,8 +56,6 @@
         .medication-add, .lab-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
         .medication-add input, .lab-add input { flex: 1; min-width: 80px; padding: 6px 10px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
         .medication-add select { padding: 6px 10px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
-
-        /* History and metrics */
         #history-list { display: flex; flex-direction: column; gap: 8px; }
         .history-item { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: border-color 0.2s; }
         .history-item:hover { border-color: #06b6d4; }
@@ -77,8 +67,6 @@
         #case-logs table { width: 100%; border-collapse: collapse; font-size: 12px; }
         #case-logs th { text-align: left; padding: 6px 10px; color: #64748b; font-weight: 600; border-bottom: 1px solid #1e293b; }
         #case-logs td { padding: 6px 10px; border-bottom: 1px solid #0a0e17; }
-
-        /* Responsive */
         @media (max-width: 768px) {
             .app-main { flex-direction: column; }
             .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #1e293b; display: flex; overflow-x: auto; }
@@ -105,7 +93,6 @@
             <button data-view="observability">📊 Metrics</button>
         </aside>
         <section class="content">
-            <!-- Scribe View -->
             <div id="scribe-view" class="view active">
                 <div class="control-bar">
                     <button id="start-consult-btn" class="btn-primary">🎤 Start Consultation</button>
@@ -133,7 +120,6 @@
                 <textarea id="transcript-input" placeholder="Speak or paste transcript here..." rows="4"></textarea>
                 <button id="analyze-btn" class="btn-secondary">🔍 Analyze Transcript</button>
                 <div id="analysis-status"></div>
-
                 <div class="prescription-draft">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
                         <h2>📋 Prescription Draft</h2>
@@ -173,14 +159,10 @@
                     </div>
                 </div>
             </div>
-
-            <!-- History View -->
             <div id="history-view" class="view">
                 <h2>📋 Consultation History</h2>
                 <div id="history-list"></div>
             </div>
-
-            <!-- Observability View -->
             <div id="observability-view" class="view">
                 <h2>📊 Observability Dashboard</h2>
                 <div class="metrics-grid">
@@ -194,30 +176,24 @@
         </section>
     </main>
 </div>
-
 <script>
 const API_BASE = '/api';
 const accessToken = localStorage.getItem('access_token');
 if (!accessToken) {
     window.location.href = '/index.html';
 }
-
 let currentUser = null;
 let refreshToken = localStorage.getItem('refresh_token') || null;
 let isConsulting = false;
 let recognition = null;
 let accumulatedTranscript = '';
 let currentFinal = '';
-
-// DOM References
 const transcriptInput = document.getElementById('transcript-input');
 const startBtn = document.getElementById('start-consult-btn');
 const stopBtn = document.getElementById('stop-consult-btn');
 const micStatus = document.getElementById('mic-status');
 const analysisStatus = document.getElementById('analysis-status');
 const analyzeBtn = document.getElementById('analyze-btn');
-
-// ---------- API request with token refresh ----------
 async function apiRequest(endpoint, options = {}) {
     const headers = { 'Content-Type': 'application/json', ...options.headers };
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
@@ -243,16 +219,12 @@ async function apiRequest(endpoint, options = {}) {
     }
     return res;
 }
-
-// ---------- Navigation ----------
 function showView(id) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(id + '-view').classList.add('active');
     document.querySelectorAll('.sidebar button').forEach(b => b.classList.remove('active'));
     document.querySelector(`.sidebar button[data-view="${id}"]`)?.classList.add('active');
 }
-
-// ---------- User info ----------
 async function loadUserInfo() {
     const res = await apiRequest('/auth/me');
     if (res.ok) {
@@ -267,8 +239,6 @@ async function loadUserInfo() {
         window.location.href = '/index.html';
     }
 }
-
-// ---------- Groq status ----------
 async function checkGroqStatus() {
     try {
         const res = await apiRequest('/health');
@@ -289,16 +259,11 @@ async function checkGroqStatus() {
         document.getElementById('ollama-status').textContent = '❌ Backend unreachable';
     }
 }
-
-// ---------- Update mic status ----------
 function setMicStatus(status, text) {
     micStatus.className = status;
     micStatus.textContent = text;
 }
-
-// ---------- Start Consultation ----------
 document.getElementById('start-consult-btn').addEventListener('click', () => {
-    // Check if speech recognition is supported
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
         setMicStatus('idle', 'Speech not supported');
@@ -306,18 +271,14 @@ document.getElementById('start-consult-btn').addEventListener('click', () => {
         analysisStatus.textContent = '⚠️ Your browser does not support speech recognition. Please type the transcript manually.';
         transcriptInput.placeholder = 'Type transcript here...';
         transcriptInput.disabled = false;
-        // Allow typing even without speech
         isConsulting = true;
         startBtn.style.display = 'none';
         stopBtn.style.display = 'inline-block';
         transcriptInput.focus();
         return;
     }
-
-    // Request microphone permission
     navigator.mediaDevices.getUserMedia({ audio: true })
         .then(() => {
-            // Permission granted
             startSpeechRecognition();
         })
         .catch((err) => {
@@ -325,7 +286,6 @@ document.getElementById('start-consult-btn').addEventListener('click', () => {
             setMicStatus('idle', 'Mic blocked');
             analysisStatus.className = 'error';
             analysisStatus.textContent = '⚠️ Microphone access denied. Please allow microphone access or type manually.';
-            // Fallback to manual typing
             isConsulting = true;
             startBtn.style.display = 'none';
             stopBtn.style.display = 'inline-block';
@@ -334,14 +294,12 @@ document.getElementById('start-consult-btn').addEventListener('click', () => {
             transcriptInput.focus();
         });
 });
-
 function startSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
         setMicStatus('idle', 'Not supported');
         return;
     }
-
     isConsulting = true;
     startBtn.style.display = 'none';
     stopBtn.style.display = 'inline-block';
@@ -353,16 +311,13 @@ function startSpeechRecognition() {
     setMicStatus('listening', 'Listening...');
     analysisStatus.className = '';
     analysisStatus.textContent = '🎤 Listening to speech...';
-
     recognition = new SpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = 'en-IN';
-
     recognition.onstart = () => {
         setMicStatus('listening', 'Listening...');
     };
-
     recognition.onresult = (event) => {
         let final = '';
         let interim = '';
@@ -379,10 +334,8 @@ function startSpeechRecognition() {
         }
         const fullText = (accumulatedTranscript + ' ' + currentFinal + ' ' + interim).trim();
         transcriptInput.value = fullText;
-        // Auto-scroll to bottom
         transcriptInput.scrollTop = transcriptInput.scrollHeight;
     };
-
     recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         if (event.error === 'not-allowed') {
@@ -398,22 +351,18 @@ function startSpeechRecognition() {
             analysisStatus.className = 'error';
             analysisStatus.textContent = '⚠️ Speech recognition error: ' + event.error;
         }
-        // Try to restart if still consulting
         if (isConsulting) {
             setTimeout(() => {
                 try { recognition.start(); } catch(e) {}
             }, 1000);
         }
     };
-
     recognition.onend = () => {
         if (isConsulting) {
-            // Auto-restart if still consulting
             try {
                 recognition.start();
             } catch(e) {
                 console.log('Could not restart recognition:', e);
-                // Try again after a delay
                 setTimeout(() => {
                     if (isConsulting) {
                         try { recognition.start(); } catch(e) {}
@@ -424,7 +373,6 @@ function startSpeechRecognition() {
             setMicStatus('idle', 'Idle');
         }
     };
-
     try {
         recognition.start();
     } catch(e) {
@@ -432,21 +380,15 @@ function startSpeechRecognition() {
         setMicStatus('idle', 'Error');
         analysisStatus.className = 'error';
         analysisStatus.textContent = '⚠️ Failed to start speech recognition. Please type manually.';
-        // Fallback: allow typing
         transcriptInput.disabled = false;
         transcriptInput.placeholder = 'Type transcript here...';
     }
 }
-
-// ===================================================
-// UPDATED: Stop Consultation – Auto-Analyze on Stop
-// ===================================================
 document.getElementById('stop-consult-btn').addEventListener('click', () => {
     isConsulting = false;
     stopBtn.style.display = 'none';
     startBtn.style.display = 'inline-block';
     setMicStatus('idle', 'Stopped');
-
     if (recognition) {
         try {
             recognition.stop();
@@ -455,31 +397,23 @@ document.getElementById('stop-consult-btn').addEventListener('click', () => {
         }
         recognition = null;
     }
-
-    // Get final transcript
     const finalText = transcriptInput.value.trim();
     if (finalText.length >= 10) {
-        // Automatically trigger analysis
         analysisStatus.className = '';
         analysisStatus.textContent = '🔄 Auto-analyzing transcript...';
-        analyzeBtn.click(); // Simulate click on Analyze button
+        analyzeBtn.click();
     } else {
         analysisStatus.className = 'error';
         analysisStatus.textContent = '⚠️ Transcript too short (minimum 10 characters). Please provide more text.';
     }
 });
-// ===================================================
-
-// ---------- Analyze Transcript ----------
 document.getElementById('analyze-btn').addEventListener('click', analyzeTranscript);
-
 document.querySelectorAll('.preset-btn').forEach(b => {
     b.addEventListener('click', () => {
         transcriptInput.value = b.dataset.transcript;
         analyzeTranscript();
     });
 });
-
 async function analyzeTranscript() {
     const transcript = transcriptInput.value.trim();
     if (transcript.length < 10) {
@@ -513,7 +447,6 @@ async function analyzeTranscript() {
     }
     analyzeBtn.disabled = false;
 }
-
 function populateDraft(data) {
     document.getElementById('chief-complaint').value = data.chiefComplaint || '';
     document.getElementById('hpi').value = data.hpi || '';
@@ -552,7 +485,6 @@ function populateDraft(data) {
         labList.appendChild(div);
     }
 }
-
 function clearDraft() {
     ['chief-complaint','hpi','primary-diagnosis','differential-diagnosis','advice'].forEach(id =>
         document.getElementById(id).value = '');
@@ -560,8 +492,6 @@ function clearDraft() {
     document.getElementById('lab-tests-list').innerHTML = '';
 }
 document.getElementById('clear-draft-btn').addEventListener('click', clearDraft);
-
-// Add medication
 document.getElementById('add-med-btn').addEventListener('click', () => {
     const drug = document.getElementById('med-drug').value.trim();
     if (!drug) { alert('Enter drug name'); return; }
@@ -580,8 +510,6 @@ document.getElementById('add-med-btn').addEventListener('click', () => {
     list.appendChild(div);
     ['med-drug','med-dose','med-frequency','med-duration'].forEach(id => document.getElementById(id).value = '');
 });
-
-// Add lab test
 document.getElementById('add-lab-btn').addEventListener('click', () => {
     const test = document.getElementById('lab-test').value.trim();
     if (!test) { alert('Enter test name'); return; }
@@ -595,14 +523,10 @@ document.getElementById('add-lab-btn').addEventListener('click', () => {
     list.appendChild(div);
     document.getElementById('lab-test').value = '';
 });
-
-// Print
 document.getElementById('print-btn').addEventListener('click', () => {
     alert('📄 Print prescription using browser print (Ctrl+P)');
     window.print();
 });
-
-// History
 async function loadConsultations() {
     try {
         const res = await apiRequest('/consultations?limit=50');
@@ -622,7 +546,6 @@ async function loadConsultations() {
         }
     } catch(e) { console.error(e); }
 }
-
 async function loadConsultation(id) {
     try {
         const res = await apiRequest(`/consultations/${id}`);
@@ -634,8 +557,6 @@ async function loadConsultation(id) {
         }
     } catch(e) { console.error(e); }
 }
-
-// Metrics
 async function loadMetrics() {
     try {
         const res = await apiRequest('/consultations?limit=100');
@@ -667,14 +588,10 @@ async function loadMetrics() {
         }
     } catch(e) { console.error(e); }
 }
-
-// Logout
 document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.clear();
     window.location.href = '/index.html';
 });
-
-// Sidebar navigation
 document.querySelectorAll('.sidebar button').forEach(b => {
     b.addEventListener('click', () => {
         const view = b.dataset.view;
@@ -683,8 +600,6 @@ document.querySelectorAll('.sidebar button').forEach(b => {
         else if (view === 'observability') loadMetrics();
     });
 });
-
-// Start
 loadUserInfo();
 </script>
 </body>

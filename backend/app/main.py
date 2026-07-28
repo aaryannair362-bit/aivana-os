@@ -5,8 +5,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+import os
 from .config import settings
 from .models import Base, User, Organization, Consultation, PasswordHistory, Patient, NurseAssignment, Vital, Task, NursingNote
 from .auth import (
@@ -36,11 +39,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend")
+if os.path.exists(frontend_dir):
+    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+    @app.get("/")
+    async def serve_index():
+        index_path = os.path.join(frontend_dir, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        return {"message": "Frontend not found"}
+    @app.get("/{filename}.html")
+    async def serve_html(filename: str):
+        file_path = os.path.join(frontend_dir, f"{filename}.html")
+        if os.path.exists(file_path):
+            return FileResponse(file_path)
+        raise HTTPException(status_code=404, detail="Page not found")
+else:
+    @app.get("/")
+    def root():
+        return {"name": "AIVANA Hospital System", "version": "1.0", "docs": "/docs"}
+
 def create_default_user():
     db = SessionLocal()
     try:
         if db.query(User).count() == 0:
-            print("Creating default admin user...")
             org = Organization(name="Default Hospital")
             db.add(org)
             db.flush()
@@ -57,7 +79,6 @@ def create_default_user():
             history = PasswordHistory(user_id=user.id, password_hash=password_hash)
             db.add(history)
             db.commit()
-            print("Default admin created: demo@aivana.com / Demo@123456")
     except Exception as e:
         print(f"Error creating default user: {e}")
     finally:
@@ -65,20 +86,7 @@ def create_default_user():
 
 @app.on_event("startup")
 def startup():
-    print("\n" + "="*60)
-    print("🏥 AIVANA Hospital System")
-    print("="*60)
-    print(f"📁 Database: {settings.DATABASE_URL}")
-    print(f"🤖 Groq Model: {settings.GROQ_MODEL}")
-    print(f"🔗 API: http://localhost:8000")
-    print("="*60 + "\n")
     create_default_user()
-    if not scribe.is_available():
-        print(f"⚠️ Groq API key not configured or invalid.")
-        print(f"   Please set GROQ_API_KEY in environment variables")
-        print("   (You can still use the system manually without AI)")
-    else:
-        print(f"✅ Groq connected with model '{scribe.model}'")
 
 @app.post("/api/auth/register")
 async def register(request: Request, db: Session = Depends(get_db)):
@@ -856,10 +864,6 @@ def health():
         "groq_available": scribe.is_available(),
         "groq_model": scribe.model
     }
-
-@app.get("/")
-def root():
-    return {"name": "AIVANA Hospital System", "version": "1.0", "docs": "/docs"}
 
 if __name__ == "__main__":
     import uvicorn
