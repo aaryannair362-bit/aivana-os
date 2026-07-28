@@ -59,6 +59,9 @@ else:
     def root():
         return {"name": "AIVANA Hospital System", "version": "1.0", "docs": "/docs"}
 
+def is_doctor(user: dict) -> bool:
+    return user.get("role") == "Doctor"
+
 def create_default_user():
     db = SessionLocal()
     try:
@@ -424,7 +427,7 @@ def get_patient_details(
         ).first()
         if not assignment:
             raise HTTPException(403, "Not assigned to this patient")
-    elif not (is_head_nurse(current_user) or is_nursing_station(current_user)):
+    elif not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_doctor(current_user)):
         raise HTTPException(403, "Permission denied")
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
@@ -568,7 +571,7 @@ async def create_nursing_note(
 
 @app.get("/api/ipd/patients")
 def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    if is_head_nurse(current_user) or is_nursing_station(current_user):
+    if is_head_nurse(current_user) or is_nursing_station(current_user) or is_doctor(current_user):
         patients = db.query(Patient).filter(Patient.status == "Active").all()
     elif is_nurse(current_user):
         assignments = db.query(NurseAssignment).filter(
@@ -697,7 +700,7 @@ async def record_vital(request: Request, current_user: dict = Depends(get_curren
 
 @app.get("/api/ipd/vitals/{patient_id}")
 def get_vitals(patient_id: int, limit: int = 10, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user)):
+    if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user) or is_doctor(current_user)):
         raise HTTPException(403, "Permission denied")
     if is_nurse(current_user):
         assignment = db.query(NurseAssignment).filter(
@@ -761,7 +764,7 @@ async def update_task(task_id: int, request: Request, current_user: dict = Depen
 
 @app.get("/api/ipd/tasks/{patient_id}")
 def get_tasks(patient_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user)):
+    if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user) or is_doctor(current_user)):
         raise HTTPException(403, "Permission denied")
     if is_nurse(current_user):
         assignment = db.query(NurseAssignment).filter(
@@ -856,6 +859,31 @@ Example:
     log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
               "nurse_consult", f"patients/{patient_id}", "Success", "Nurse consultation recorded")
     return {"message": "Consultation saved", "vitals": result.get("vitals", []), "labs": result.get("labs", []), "nursing_note": nursing_data}
+
+# ========== DRUG INTERACTIONS ENDPOINT ==========
+@app.post("/api/drug-interactions")
+async def drug_interactions(request: Request, current_user: dict = Depends(get_current_user)):
+    body = await request.json()
+    medications = body.get("medications", [])
+    if not medications:
+        return {"interactions": [], "message": "No medications to check."}
+    drug_names = [m.get("drugName", "") for m in medications if m.get("drugName")]
+    if not drug_names:
+        return {"interactions": [], "message": "No valid drug names provided."}
+    prompt = f"""You are a clinical pharmacologist. Given the following list of medications, analyze for potential drug-drug interactions.
+Medications: {', '.join(drug_names)}
+For each interaction found, provide:
+- Drug Pair (e.g., 'Drug A - Drug B')
+- Severity (Mild, Moderate, Severe)
+- Reason (mechanism or clinical effect)
+- Recommendation (brief clinical advice)
+Return a JSON array of objects with keys: drug_pair, severity, reason, recommendation.
+If no interactions, return an empty array [].
+"""
+    result = scribe._generate_json(prompt, temperature=0.3)
+    if not isinstance(result, list):
+        result = []
+    return {"interactions": result}
 
 @app.get("/api/health")
 def health():
