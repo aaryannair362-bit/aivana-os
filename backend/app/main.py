@@ -353,6 +353,18 @@ async def scribe_transcript(request: Request, current_user: dict = Depends(get_c
         print(f"Scribe error: {e}")
         raise HTTPException(500, f"Error: {str(e)}")
 
+@app.post("/api/test-scribe")
+async def test_scribe(request: Request):
+    body = await request.json()
+    transcript = body.get("transcript")
+    if not transcript:
+        return {"error": "No transcript"}
+    try:
+        result = scribe.scribe_transcript(transcript)
+        return {"result": result}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/api/clinical-helper")
 async def clinical_helper(request: Request, current_user: dict = Depends(get_current_user)):
     try:
@@ -860,7 +872,6 @@ Example:
               "nurse_consult", f"patients/{patient_id}", "Success", "Nurse consultation recorded")
     return {"message": "Consultation saved", "vitals": result.get("vitals", []), "labs": result.get("labs", []), "nursing_note": nursing_data}
 
-# ========== DRUG INTERACTIONS ENDPOINT ==========
 @app.post("/api/drug-interactions")
 async def drug_interactions(request: Request, current_user: dict = Depends(get_current_user)):
     body = await request.json()
@@ -870,7 +881,7 @@ async def drug_interactions(request: Request, current_user: dict = Depends(get_c
     drug_names = [m.get("drugName", "") for m in medications if m.get("drugName")]
     if not drug_names:
         return {"interactions": [], "message": "No valid drug names provided."}
-    prompt = f"""You are a clinical pharmacologist with 50 years of experince. Given the following list of medications, analyze for potential drug-drug interactions.
+    prompt = f"""You are a clinical pharmacologist. Given the following list of medications, analyze for potential drug-drug interactions.
 Medications: {', '.join(drug_names)}
 For each interaction found, provide:
 - Drug Pair (e.g., 'Drug A - Drug B')

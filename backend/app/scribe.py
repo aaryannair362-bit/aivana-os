@@ -1,4 +1,5 @@
 import json
+import re
 import requests
 from .config import settings
 
@@ -28,13 +29,9 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
 
     def _call_groq_api(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
         if not self.api_key:
-            print("ERROR: No API key available in _call_groq_api")
             raise ValueError("Groq API key not configured. Set GROQ_API_KEY in environment.")
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         payload = {
             "model": self.model,
             "messages": [
@@ -45,10 +42,8 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
             "max_tokens": 2000
         }
 
-        print(f"DEBUG: Calling Groq API with model: {self.model}")
         try:
             response = requests.post(self.base_url, headers=headers, json=payload, timeout=60)
-            print(f"DEBUG: Groq API response status: {response.status_code}")
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
@@ -56,23 +51,93 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
             print(f"Groq API error: {e}")
             if hasattr(e, 'response') and e.response:
                 print(f"Response body: {e.response.text}")
-            return ""
+            raise
 
     def _generate_json(self, prompt: str, system: str = None, temperature: float = 0.3) -> dict:
-        response = self._call_groq_api(prompt, system, temperature)
-        response = response.strip()
-        if response.startswith("```json"):
-            response = response[7:]
-        if response.startswith("```"):
-            response = response[3:]
-        if response.endswith("```"):
-            response = response[:-3]
-        response = response.strip()
         try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            print(f"Failed to parse JSON: {response[:200]}")
+            raw = self._call_groq_api(prompt, system, temperature)
+            print(f"RAW RESPONSE: {raw[:500]}...")  # log first 500 chars
+            # Clean markdown code fences
+            cleaned = raw.strip()
+            if cleaned.startswith("```json"):
+                cleaned = cleaned[7:]
+            if cleaned.startswith("```"):
+                cleaned = cleaned[3:]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            # Try parsing as JSON
+            result = json.loads(cleaned)
+            return result
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error: {e}")
+            print(f"Raw content that failed: {raw[:1000]}")
+            # Attempt fallback extraction
+            return self._fallback_extract(raw)
+        except Exception as e:
+            print(f"Unexpected error in _generate_json: {e}")
             return {}
+
+    def _fallback_extract(self, text: str) -> dict:
+        """Try to extract structured data from raw text using regex if JSON fails."""
+        result = {
+            "chiefComplaint": "",
+            "hpi": "",
+            "primaryDiagnosis": "",
+            "differentialDiagnosis": "",
+            "medications": [],
+            "advice": "",
+            "labTests": []
+        }
+        # Try to find sections by common headings
+        lines = text.split('\n')
+        current_section = None
+        buffer = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Detect section headers
+            lower = line.lower()
+            if "chief complaint" in lower or "chiefcomplaint" in lower:
+                current_section = "chiefComplaint"
+                continue
+            elif "history of present illness" in lower or "hpi" in lower:
+                current_section = "hpi"
+                continue
+            elif "primary diagnosis" in lower or "primarydiagnosis" in lower:
+                current_section = "primaryDiagnosis"
+                continue
+            elif "differential diagnosis" in lower or "differentialdiagnosis" in lower:
+                current_section = "differentialDiagnosis"
+                continue
+            elif "medications" in lower:
+                current_section = "medications"
+                continue
+            elif "advice" in lower or "instructions" in lower:
+                current_section = "advice"
+                continue
+            elif "lab tests" in lower or "labtests" in lower:
+                current_section = "labTests"
+                continue
+            # If we have a current section and this line looks like content (not a section header), append
+            if current_section and not any(kw in lower for kw in ["chief complaint", "history", "primary diagnosis", "differential", "medications", "advice", "lab tests"]):
+                buffer.append(line)
+        # Join buffer to a single string for each section
+        if buffer:
+            # crude: split by double newline
+            full_text = "\n".join(buffer)
+            # Use simple heuristics: if we have ":" then split
+            if ":" in full_text:
+                parts = full_text.split(":")
+                if len(parts) > 1:
+                    result["chiefComplaint"] = parts[1].strip() if "chief" in parts[0].lower() else ""
+            # Try to extract medications using regex
+            med_pattern = r'([A-Za-z]+)\s*(\d+\.?\d*\s*(mg|g|ml|tablet|injection))'
+            matches = re.findall(med_pattern, full_text, re.IGNORECASE)
+            if matches:
+                result["medications"] = [{"drugName": m[0], "dose": m[1], "frequency": "N/A", "route": "Oral", "duration": "N/A"} for m in matches[:5]]
+        return result
 
     def scribe_transcript(self, transcript: str) -> dict:
         prompt = f"""Process the following spoken consultation transcript and structure it perfectly.
@@ -98,7 +163,7 @@ Return a JSON object with the following structure:
             "differentialDiagnosis": "", "medications": [], "advice": "", "labTests": []
         }
         for key in default:
-            if key not in result:
+            if key not in result or result[key] is None:
                 result[key] = default[key]
         return result
 
@@ -134,19 +199,16 @@ Keep drug names in English. Translate descriptions, instructions, and test names
 
     def is_available(self) -> bool:
         if not self.api_key:
-            print("DEBUG: is_available = False (no API key)")
             return False
         try:
             headers = {"Authorization": f"Bearer {self.api_key}"}
             resp = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=10)
-            print(f"DEBUG: is_available test response: {resp.status_code}")
             return resp.status_code == 200
         except Exception as e:
-            print(f"DEBUG: is_available exception: {e}")
+            print(f"is_available exception: {e}")
             return False
 
     def pull_model(self) -> bool:
         return True
 
 scribe = ScribeEngine()
-print(f"DEBUG: ScribeEngine created. Available: {scribe.is_available()}")
