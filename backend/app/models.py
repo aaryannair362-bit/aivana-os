@@ -79,6 +79,9 @@ class Consultation(Base):
     total_tokens = Column(Integer)
     input_tokens = Column(Integer)
     output_tokens = Column(Integer)
+    visit_type = Column(String(20), default="OPD")
+    admission_day = Column(Integer, nullable=True)
+    interaction_warnings = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Patient(Base):
@@ -130,6 +133,9 @@ class Task(Base):
     due_date = Column(DateTime)
     completed_at = Column(DateTime)
     notes = Column(Text)
+    task_type = Column(String(20), default="General")
+    source = Column(String(20), default="Manual")
+    consultation_id = Column(Integer, ForeignKey("consultations.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class NursingNote(Base):
@@ -139,4 +145,18 @@ class NursingNote(Base):
     nurse_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     notes = Column(Text)
     voice_transcript = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class DischargeSummary(Base):
+    __tablename__ = "discharge_summaries"
+    id = Column(Integer, primary_key=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id"))
+    generated_by = Column(Integer, ForeignKey("users.id"))
+    admission_summary = Column(Text)
+    hospital_course = Column(Text)
+    discharge_diagnosis = Column(Text)
+    medications_at_discharge = Column(JSON)
+    follow_up_instructions = Column(Text)
+    condition_at_discharge = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)

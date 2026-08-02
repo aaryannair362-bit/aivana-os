@@ -55,7 +55,7 @@
 </div>
 <script>
 const API_BASE = '/api';
-const accessToken = localStorage.getItem('access_token');
+let accessToken = localStorage.getItem('access_token');
 if (!accessToken) {
     window.location.href = '/index.html';
 }
@@ -75,6 +75,7 @@ async function apiRequest(endpoint, options = {}) {
                 const data = await r.json();
                 localStorage.setItem('access_token', data.access_token);
                 localStorage.setItem('refresh_token', data.refresh_token);
+                accessToken = data.access_token;
                 headers['Authorization'] = `Bearer ${data.access_token}`;
                 return fetch(`${API_BASE}${endpoint}`, { ...options, headers });
             }

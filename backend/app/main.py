@@ -1,27 +1,36 @@
 import json
+import re
 import uuid
 import time
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 import os
 from .config import settings
-from .models import Base, User, Organization, Consultation, PasswordHistory, Patient, NurseAssignment, Vital, Task, NursingNote
+from .models import Base, User, Organization, Consultation, PasswordHistory, Patient, NurseAssignment, Vital, Task, NursingNote, DischargeSummary
 from .auth import (
     get_current_user, get_password_hash, verify_password,
     validate_password_complexity, create_access_token, create_refresh_token,
     decode_token, log_audit, is_admin, is_head_nurse, is_nursing_station, is_nurse
 )
 from .scribe import scribe
+from .migrations import run_additive_migrations
+from .tasks_engine import (
+    generate_tasks_from_consultation, get_active_medications,
+    compute_admission_day, check_drug_interactions,
+)
 
 engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
+run_additive_migrations(engine)
 
 def get_db():
     db = SessionLocal()
@@ -31,6 +40,11 @@ def get_db():
         db.close()
 
 app = FastAPI(title="AIVANA Hospital System")
+
+@app.exception_handler(json.JSONDecodeError)
+async def json_decode_error_handler(request: Request, exc: json.JSONDecodeError):
+    return JSONResponse(status_code=400, content={"detail": "Request body must be valid JSON"})
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,6 +75,31 @@ else:
 
 def is_doctor(user: dict) -> bool:
     return user.get("role") == "Doctor"
+
+def _coerce_number(value, integer=False):
+    """
+    Best-effort coercion of a (typically LLM voice-extracted) value into a number, or None if
+    it can't reasonably be read as one. Groq's JSON extraction is not schema-enforced, so a
+    vital field can come back as a string ("seventy"), a list, or other junk instead of a
+    number -- passed straight into an Integer/Float DB column, a list crashes the insert
+    outright (sqlite3.ProgrammingError / a Postgres type error) and a non-numeric string
+    silently corrupts later numeric comparisons (e.g. the abnormal-vital check's
+    `heart_rate > 100`, which would raise TypeError comparing str > int). Never raises.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if integer else float(value)
+    if isinstance(value, str):
+        match = re.search(r"-?\d+\.?\d*", value)
+        if not match:
+            return None
+        try:
+            num = float(match.group())
+        except ValueError:
+            return None
+        return int(num) if integer else num
+    return None
 
 def create_default_user():
     db = SessionLocal()
@@ -128,6 +167,8 @@ async def register(request: Request, db: Session = Depends(get_db)):
         return {"message": "Registration successful", "user": {"id": user.id, "email": user.email, "role": user.role}}
     except HTTPException:
         raise
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
         print(f"Registration error: {e}")
         raise HTTPException(500, "Internal server error")
@@ -179,6 +220,8 @@ async def login(request: Request, db: Session = Depends(get_db)):
         }
     except HTTPException:
         raise
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
         print(f"Login error: {e}")
         raise HTTPException(500, "Internal server error")
@@ -205,6 +248,8 @@ async def refresh(request: Request):
         }
     except HTTPException:
         raise
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
         print(f"Refresh error: {e}")
         raise HTTPException(500, "Internal server error")
@@ -221,7 +266,7 @@ def get_users(
 ):
     if not (is_admin(current_user) or is_head_nurse(current_user)):
         raise HTTPException(403, "Permission denied")
-    query = db.query(User)
+    query = db.query(User).filter(User.organization_id == current_user.get("organization_id"))
     if role:
         query = query.filter(User.role == role)
     users = query.all()
@@ -240,7 +285,10 @@ async def update_user_role(
     role = body.get("role")
     if not role:
         raise HTTPException(400, "Role is required")
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.organization_id == current_user.get("organization_id")
+    ).first()
     if not user:
         raise HTTPException(404, "User not found")
     user.role = role
@@ -250,15 +298,22 @@ async def update_user_role(
     return {"message": "Role updated successfully"}
 
 @app.patch("/api/auth/users/{user_id}/password")
-def reset_user_password(
+async def reset_user_password(
     user_id: int,
-    new_password: str,
+    request: Request,
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     if not is_admin(current_user):
         raise HTTPException(403, "Only Admin can reset passwords")
-    user = db.query(User).filter(User.id == user_id).first()
+    body = await request.json()
+    new_password = body.get("new_password")
+    if not new_password:
+        raise HTTPException(400, "new_password is required")
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.organization_id == current_user.get("organization_id")
+    ).first()
     if not user:
         raise HTTPException(404, "User not found")
     valid, error = validate_password_complexity(new_password, user.email)
@@ -318,14 +373,34 @@ async def scribe_transcript(request: Request, current_user: dict = Depends(get_c
         body = await request.json()
         transcript = body.get("transcript")
         patient_id = body.get("patient_id")
-        if not transcript or len(transcript.strip()) < 10:
+        if not isinstance(transcript, str) or len(transcript.strip()) < 10:
             raise HTTPException(400, "Transcript too short")
+        linked_patient = None
+        if patient_id:
+            # An OPD walk-in is allowed to use an arbitrary patient_id that doesn't
+            # correspond to any real IPD Patient row (tracks a walk-in across visits
+            # without requiring admission -- intentional, see TEST_NOTES.md). What must
+            # NOT be allowed is patient_id resolving to a REAL Patient row that belongs
+            # to a different organization -- that would attach this consultation (and,
+            # downstream, auto-generated tasks) to another org's patient chart.
+            linked_patient = db.query(Patient).filter(Patient.id == patient_id).first()
+            if linked_patient and linked_patient.organization_id != current_user.get("organization_id"):
+                raise HTTPException(404, "Patient not found")
         start_time = time.time()
-        result = scribe.scribe_transcript(transcript)
+        # Off the event loop: scribe.scribe_transcript makes a blocking `requests` call to
+        # Groq (now with retry-with-backoff on 429, verified live -- worst case several
+        # retries at up to 20s each). Called inline inside an `async def` handler, that
+        # blocks THIS SINGLE event loop for its entire duration -- which means one doctor's
+        # slow/rate-limited consultation freezes the app for every other concurrent user on
+        # every endpoint, not just this one. run_in_threadpool moves the blocking call off
+        # the loop so other requests keep being served while this one waits on Groq.
+        result = await run_in_threadpool(scribe.scribe_transcript, transcript)
         latency = time.time() - start_time
         consultation = Consultation(
             case_id=f"{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6]}",
-            patient_name="Patient",
+            patient_name=linked_patient.name if linked_patient else "Patient",
+            patient_age=str(linked_patient.age) if linked_patient and linked_patient.age is not None else "",
+            patient_gender=linked_patient.gender if linked_patient else "",
             patient_id=patient_id,
             organization_id=current_user.get("organization_id"),
             user_id=current_user.get("id"),
@@ -344,11 +419,21 @@ async def scribe_transcript(request: Request, current_user: dict = Depends(get_c
         )
         db.add(consultation)
         db.commit()
+        db.refresh(consultation)
+        tasks = generate_tasks_from_consultation(db, consultation, current_user["id"])
         log_audit(db, current_user.get("id"), current_user.get("email"), current_user.get("organization_id"),
                   "scribe", "api/scribe", "Success")
+        result["id"] = consultation.id
+        result["case_id"] = consultation.case_id
+        result["tasks_created"] = len(tasks)
+        result["patient_name"] = consultation.patient_name
+        result["patient_age"] = consultation.patient_age
+        result["patient_gender"] = consultation.patient_gender
         return result
     except HTTPException:
         raise
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
         print(f"Scribe error: {e}")
         raise HTTPException(500, f"Error: {str(e)}")
@@ -360,7 +445,7 @@ async def test_scribe(request: Request):
     if not transcript:
         return {"error": "No transcript"}
     try:
-        result = scribe.scribe_transcript(transcript)
+        result = await run_in_threadpool(scribe.scribe_transcript, transcript)
         return {"result": result}
     except Exception as e:
         return {"error": str(e)}
@@ -373,9 +458,11 @@ async def clinical_helper(request: Request, current_user: dict = Depends(get_cur
         query = body.get("query", "")
         if not current_draft:
             raise HTTPException(400, "Current draft required")
-        return {"advice": scribe.clinical_helper(current_draft, query)}
+        return {"advice": await run_in_threadpool(scribe.clinical_helper, current_draft, query)}
     except HTTPException:
         raise
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -395,9 +482,11 @@ async def translate_prescription(request: Request, current_user: dict = Depends(
             "advice": body.get("advice", ""),
             "labTests": body.get("labTests", [])
         }
-        return scribe.translate_prescription(draft, target_language)
+        return await run_in_threadpool(scribe.translate_prescription, draft, target_language)
     except HTTPException:
         raise
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -422,7 +511,66 @@ def get_consultation(consultation_id: int, current_user: dict = Depends(get_curr
         "medications": c.medications, "lab_tests": c.lab_tests, "advice": c.advice,
         "raw_transcript": c.raw_transcript, "created_at": c.created_at.isoformat(),
         "gemini_latency": c.gemini_latency, "total_tokens": c.total_tokens,
-        "patient_id": c.patient_id
+        "patient_id": c.patient_id, "visit_type": c.visit_type, "admission_day": c.admission_day,
+        "interaction_warnings": c.interaction_warnings
+    }
+
+@app.patch("/api/consultations/{consultation_id}/finalize")
+async def finalize_consultation(
+    consultation_id: int,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    A doctor's edits to the draft after extraction (diagnosis wording, added/removed
+    medications, lab tests) were previously never persisted -- POST /api/scribe both
+    extracts AND saves in one shot, with no save step afterward. This is that save step:
+    it writes the doctor's final reviewed state, re-runs the drug-interaction check against
+    the patient's full active regimen (not just what changed today) if the consultation is
+    linked to a real patient, and (re)generates that consultation's auto tasks to match.
+    """
+    consultation = db.query(Consultation).filter(
+        Consultation.id == consultation_id,
+        Consultation.organization_id == current_user.get("organization_id")
+    ).first()
+    if not consultation:
+        raise HTTPException(404, "Consultation not found")
+    if consultation.user_id != current_user.get("id") and not is_admin(current_user):
+        raise HTTPException(403, "Not authorized to finalize this consultation")
+
+    data = await request.json()
+    field_map = {
+        "chiefComplaint": "chief_complaint", "hpi": "hpi",
+        "primaryDiagnosis": "primary_diagnosis", "differentialDiagnosis": "differential_diagnosis",
+        "advice": "advice",
+    }
+    for field, attr in field_map.items():
+        if field in data:
+            setattr(consultation, attr, data[field])
+    if "medications" in data:
+        consultation.medications = data["medications"]
+    if "labTests" in data:
+        consultation.lab_tests = data["labTests"]
+    db.commit()
+    db.refresh(consultation)
+
+    interaction_warnings = []
+    if consultation.patient_id:
+        active_meds = get_active_medications(db, consultation.patient_id)
+        drug_names = [m.get("drugName") for m in active_meds if isinstance(m, dict) and m.get("drugName")]
+        interaction_warnings = await run_in_threadpool(check_drug_interactions, drug_names)
+        consultation.interaction_warnings = interaction_warnings
+        db.commit()
+
+    tasks = generate_tasks_from_consultation(db, consultation, current_user["id"])
+
+    log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
+              "finalize_consultation", f"consultations/{consultation_id}", "Success")
+
+    return {
+        "message": "Consultation finalized", "id": consultation.id,
+        "tasks_created": len(tasks), "interaction_warnings": interaction_warnings,
     }
 
 @app.get("/api/patients/{patient_id}/details")
@@ -431,6 +579,12 @@ def get_patient_details(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
     if is_nurse(current_user):
         assignment = db.query(NurseAssignment).filter(
             NurseAssignment.patient_id == patient_id,
@@ -441,13 +595,25 @@ def get_patient_details(
             raise HTTPException(403, "Not assigned to this patient")
     elif not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_doctor(current_user)):
         raise HTTPException(403, "Permission denied")
-    patient = db.query(Patient).filter(Patient.id == patient_id).first()
-    if not patient:
-        raise HTTPException(404, "Patient not found")
     vitals = db.query(Vital).filter(Vital.patient_id == patient_id).order_by(Vital.recorded_at.desc()).all()
     tasks = db.query(Task).filter(Task.patient_id == patient_id).order_by(Task.created_at.desc()).all()
     consultations = db.query(Consultation).filter(Consultation.patient_id == patient_id).order_by(Consultation.created_at.desc()).all()
     nursing_notes = db.query(NursingNote).filter(NursingNote.patient_id == patient_id).order_by(NursingNote.created_at.desc()).all()
+
+    active_assignment = db.query(NurseAssignment).filter(
+        NurseAssignment.patient_id == patient_id, NurseAssignment.status == "Active"
+    ).first()
+
+    nurse_ids = {v.nurse_id for v in vitals if v.nurse_id} | {t.nurse_id for t in tasks if t.nurse_id} | \
+        {n.nurse_id for n in nursing_notes if n.nurse_id}
+    if active_assignment:
+        nurse_ids.add(active_assignment.nurse_id)
+    nurse_emails = {u.id: u.email for u in db.query(User).filter(User.id.in_(nurse_ids)).all()} if nurse_ids else {}
+
+    assigned_nurse = None
+    if active_assignment:
+        assigned_nurse = {"id": active_assignment.nurse_id, "email": nurse_emails.get(active_assignment.nurse_id)}
+
     return {
         "patient": {
             "id": patient.id,
@@ -459,6 +625,7 @@ def get_patient_details(
             "diagnosis": patient.diagnosis,
             "status": patient.status,
             "admission_date": patient.admission_date.isoformat() if patient.admission_date else None,
+            "assigned_nurse": assigned_nurse,
         },
         "vitals": [{
             "id": v.id,
@@ -470,16 +637,21 @@ def get_patient_details(
             "oxygen_sat": v.oxygen_sat,
             "respiratory_rate": v.respiratory_rate,
             "notes": v.notes,
-            "nurse_id": v.nurse_id
+            "nurse_id": v.nurse_id,
+            "nurse_email": nurse_emails.get(v.nurse_id)
         } for v in vitals],
         "tasks": [{
             "id": t.id,
             "description": t.description,
             "status": t.status,
+            "task_type": t.task_type,
+            "source": t.source,
             "due_date": t.due_date.isoformat() if t.due_date else None,
             "completed_at": t.completed_at.isoformat() if t.completed_at else None,
             "nurse_id": t.nurse_id,
-            "notes": t.notes
+            "nurse_email": nurse_emails.get(t.nurse_id),
+            "notes": t.notes,
+            "is_overdue": bool(t.due_date and t.status != "Completed" and t.due_date < datetime.utcnow())
         } for t in tasks],
         "consultations": [{
             "id": c.id,
@@ -492,14 +664,18 @@ def get_patient_details(
             "medications": c.medications,
             "lab_tests": c.lab_tests,
             "advice": c.advice,
-            "raw_transcript": c.raw_transcript
+            "raw_transcript": c.raw_transcript,
+            "visit_type": c.visit_type,
+            "admission_day": c.admission_day,
+            "interaction_warnings": c.interaction_warnings
         } for c in consultations],
         "nursing_notes": [{
             "id": n.id,
             "created_at": n.created_at.isoformat(),
             "notes": n.notes,
             "voice_transcript": n.voice_transcript,
-            "nurse_id": n.nurse_id
+            "nurse_id": n.nurse_id,
+            "nurse_email": nurse_emails.get(n.nurse_id)
         } for n in nursing_notes]
     }
 
@@ -513,7 +689,10 @@ async def update_patient(
     if not (is_head_nurse(current_user) or is_nursing_station(current_user)):
         raise HTTPException(403, "Only head nurse or nursing station can update patient details")
     body = await request.json()
-    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
     if not patient:
         raise HTTPException(404, "Patient not found")
     if "ward" in body:
@@ -524,10 +703,134 @@ async def update_patient(
         patient.diagnosis = body["diagnosis"]
     if "status" in body:
         patient.status = body["status"]
+        if body["status"] != "Active":
+            # Discharge/transfer: close out any active nurse assignment so the patient stops
+            # appearing in that nurse's ward list. Without this, a discharged/transferred
+            # patient with a never-closed Active assignment keeps showing up for the nurse
+            # (get_ipd_patients' nurse branch doesn't filter by Patient.status).
+            db.query(NurseAssignment).filter(
+                NurseAssignment.patient_id == patient_id,
+                NurseAssignment.status == "Active"
+            ).update({"status": "Completed"})
     db.commit()
     log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
               "update_patient", f"patients/{patient_id}", "Success", "Updated patient details")
     return {"message": "Patient updated"}
+
+def _serialize_discharge_summary(s: DischargeSummary) -> dict:
+    return {
+        "id": s.id,
+        "patient_id": s.patient_id,
+        "admission_summary": s.admission_summary,
+        "hospital_course": s.hospital_course,
+        "discharge_diagnosis": s.discharge_diagnosis,
+        "medications_at_discharge": s.medications_at_discharge,
+        "follow_up_instructions": s.follow_up_instructions,
+        "condition_at_discharge": s.condition_at_discharge,
+        "generated_by": s.generated_by,
+        "created_at": s.created_at.isoformat(),
+    }
+
+@app.post("/api/ipd/patients/{patient_id}/discharge-summary")
+def generate_discharge_summary(
+    patient_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generates (via AI) and persists a discharge summary from the patient's full IPD record --
+    vitals trend, nursing notes, tasks, and any linked OPD consultations. A real, common
+    hospital-operations pain point: writing a discharge summary by hand from a paper/EMR chart
+    is slow and error-prone; this assembles the same underlying data this system already
+    captures into a first draft a clinician reviews and can regenerate as new data comes in.
+    Does not require the patient to already be marked Discharged -- can be drafted in advance.
+    """
+    if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_doctor(current_user)):
+        raise HTTPException(403, "Only head nurse, nursing station, or doctor can generate a discharge summary")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+
+    vitals = db.query(Vital).filter(Vital.patient_id == patient_id).order_by(Vital.recorded_at.asc()).all()
+    notes = db.query(NursingNote).filter(NursingNote.patient_id == patient_id).order_by(NursingNote.created_at.asc()).all()
+    tasks = db.query(Task).filter(Task.patient_id == patient_id).all()
+    consultations = db.query(Consultation).filter(Consultation.patient_id == patient_id).all()
+
+    context = {
+        "patient_name": patient.name,
+        "age": patient.age,
+        "gender": patient.gender,
+        "ward": patient.ward,
+        "admission_date": patient.admission_date.isoformat() if patient.admission_date else None,
+        "diagnosis": patient.diagnosis,
+        "vitals": [{
+            "recorded_at": v.recorded_at.isoformat(), "bp_systolic": v.bp_systolic, "bp_diastolic": v.bp_diastolic,
+            "heart_rate": v.heart_rate, "temperature": v.temperature, "oxygen_sat": v.oxygen_sat,
+            "respiratory_rate": v.respiratory_rate, "notes": v.notes,
+        } for v in vitals],
+        "nursing_notes": [{"created_at": n.created_at.isoformat(), "notes": n.notes} for n in notes],
+        "tasks": [{"description": t.description, "status": t.status} for t in tasks],
+        "consultations": [{
+            "chief_complaint": c.chief_complaint, "primary_diagnosis": c.primary_diagnosis,
+            "medications": c.medications, "advice": c.advice,
+            "visit_type": c.visit_type, "admission_day": c.admission_day,
+        } for c in consultations],
+    }
+
+    result = scribe.generate_discharge_summary(context)
+    fields = ("admissionSummary", "hospitalCourse", "dischargeDiagnosis", "followUpInstructions", "conditionAtDischarge")
+    if all(not str(result.get(f) or "").strip() for f in fields) and not result.get("medicationsAtDischarge"):
+        raise HTTPException(422, "Could not generate a discharge summary from the available record. Please try again.")
+
+    summary = DischargeSummary(
+        patient_id=patient_id,
+        organization_id=current_user.get("organization_id"),
+        generated_by=current_user["id"],
+        admission_summary=result.get("admissionSummary", ""),
+        hospital_course=result.get("hospitalCourse", ""),
+        discharge_diagnosis=result.get("dischargeDiagnosis", ""),
+        medications_at_discharge=result.get("medicationsAtDischarge", []),
+        follow_up_instructions=result.get("followUpInstructions", ""),
+        condition_at_discharge=result.get("conditionAtDischarge", ""),
+    )
+    db.add(summary)
+    db.commit()
+    db.refresh(summary)
+    log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
+              "generate_discharge_summary", f"patients/{patient_id}", "Success")
+    return _serialize_discharge_summary(summary)
+
+@app.get("/api/ipd/patients/{patient_id}/discharge-summary")
+def get_discharge_summary(
+    patient_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user) or is_doctor(current_user)):
+        raise HTTPException(403, "Permission denied")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+    if is_nurse(current_user):
+        assignment = db.query(NurseAssignment).filter(
+            NurseAssignment.patient_id == patient_id,
+            NurseAssignment.nurse_id == current_user["id"],
+            NurseAssignment.status == "Active"
+        ).first()
+        if not assignment:
+            raise HTTPException(403, "Not assigned to this patient")
+    summary = db.query(DischargeSummary).filter(
+        DischargeSummary.patient_id == patient_id
+    ).order_by(DischargeSummary.created_at.desc()).first()
+    if not summary:
+        raise HTTPException(404, "No discharge summary generated yet for this patient")
+    return _serialize_discharge_summary(summary)
 
 @app.post("/api/nursing-notes")
 async def create_nursing_note(
@@ -542,6 +845,12 @@ async def create_nursing_note(
         raise HTTPException(400, "patient_id required")
     if not (is_nurse(current_user) or is_head_nurse(current_user)):
         raise HTTPException(403, "Only nurses and head nurses can create nursing notes")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
     if is_nurse(current_user):
         assignment = db.query(NurseAssignment).filter(
             NurseAssignment.patient_id == patient_id,
@@ -558,7 +867,7 @@ async def create_nursing_note(
         Return as JSON with keys: subjective, objective, assessment, plan.
         Voice transcript: "{voice_text}"
         """
-        structured_note = scribe._generate_json(prompt, temperature=0.3)
+        structured_note = await run_in_threadpool(scribe._generate_json, prompt, None, 0.3)
         if not structured_note:
             structured_note = {"subjective": "", "objective": "", "assessment": "", "plan": ""}
     else:
@@ -568,6 +877,11 @@ async def create_nursing_note(
             "assessment": body.get("assessment", ""),
             "plan": body.get("plan", "")
         }
+    soap_fields = ("subjective", "objective", "assessment", "plan")
+    if all(not str(structured_note.get(f) or "").strip() for f in soap_fields):
+        detail = ("Could not extract a nursing note from the voice input. Please try again or enter it manually."
+                   if voice_text else "At least one of subjective/objective/assessment/plan is required.")
+        raise HTTPException(422, detail)
     note_text = f"Subjective: {structured_note.get('subjective', '')}\nObjective: {structured_note.get('objective', '')}\nAssessment: {structured_note.get('assessment', '')}\nPlan: {structured_note.get('plan', '')}"
     nursing_note = NursingNote(
         patient_id=patient_id,
@@ -581,24 +895,154 @@ async def create_nursing_note(
               "create_nursing_note", f"nursing_notes/{nursing_note.id}", "Success")
     return {"message": "Nursing note saved", "id": nursing_note.id}
 
+@app.post("/api/ipd/rounds")
+async def create_ipd_round(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    A doctor's daily ward-round consultation for an admitted patient -- the IPD counterpart
+    to POST /api/scribe. Same voice-transcript-in, structured-draft-out extraction, but
+    tagged to the admission (visit_type/admission_day), checked for drug interactions
+    against everything the patient is already on (not just today's new medicines), and
+    feeding the same auto-task pipeline so the nurse sees the round's orders without anyone
+    having to hand-create a task.
+    """
+    if not is_doctor(current_user):
+        raise HTTPException(403, "Only a doctor can record a ward round")
+    body = await request.json()
+    transcript = body.get("transcript")
+    patient_id = body.get("patient_id")
+    if not isinstance(transcript, str) or len(transcript.strip()) < 10:
+        raise HTTPException(400, "Transcript too short")
+    if not patient_id:
+        raise HTTPException(400, "patient_id is required")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id"),
+        Patient.status == "Active"
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Active patient not found")
+
+    start_time = time.time()
+    result = await run_in_threadpool(scribe.scribe_transcript, transcript)
+    latency = time.time() - start_time
+    admission_day = compute_admission_day(patient)
+
+    consultation = Consultation(
+        case_id=f"{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6]}",
+        patient_name=patient.name,
+        patient_age=str(patient.age) if patient.age is not None else "",
+        patient_gender=patient.gender,
+        patient_id=patient.id,
+        organization_id=current_user.get("organization_id"),
+        user_id=current_user.get("id"),
+        chief_complaint=result.get("chiefComplaint", ""),
+        hpi=result.get("hpi", ""),
+        primary_diagnosis=result.get("primaryDiagnosis", ""),
+        differential_diagnosis=result.get("differentialDiagnosis", ""),
+        medications=result.get("medications", []),
+        lab_tests=result.get("labTests", []),
+        advice=result.get("advice", ""),
+        raw_transcript=transcript,
+        gemini_latency=latency,
+        input_tokens=len(transcript)//4,
+        output_tokens=len(str(result))//4,
+        total_tokens=(len(transcript)//4)+(len(str(result))//4),
+        visit_type="IPD_ROUND",
+        admission_day=admission_day,
+    )
+    db.add(consultation)
+    db.commit()
+    db.refresh(consultation)
+
+    active_meds = get_active_medications(db, patient.id)
+    drug_names = [m.get("drugName") for m in active_meds if isinstance(m, dict) and m.get("drugName")]
+    interaction_warnings = await run_in_threadpool(check_drug_interactions, drug_names)
+    consultation.interaction_warnings = interaction_warnings
+    db.commit()
+
+    tasks = generate_tasks_from_consultation(db, consultation, current_user["id"])
+
+    log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
+              "ipd_round", f"patients/{patient_id}", "Success")
+
+    result["id"] = consultation.id
+    result["case_id"] = consultation.case_id
+    result["admission_day"] = admission_day
+    result["interaction_warnings"] = interaction_warnings
+    result["tasks_created"] = len(tasks)
+    result["active_medications"] = active_meds
+    return result
+
 @app.get("/api/ipd/patients")
 def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     if is_head_nurse(current_user) or is_nursing_station(current_user) or is_doctor(current_user):
-        patients = db.query(Patient).filter(Patient.status == "Active").all()
+        patients = db.query(Patient).filter(
+            Patient.status == "Active",
+            Patient.organization_id == current_user.get("organization_id")
+        ).all()
     elif is_nurse(current_user):
         assignments = db.query(NurseAssignment).filter(
             NurseAssignment.nurse_id == current_user["id"],
             NurseAssignment.status == "Active"
         ).all()
         patient_ids = [a.patient_id for a in assignments]
-        patients = db.query(Patient).filter(Patient.id.in_(patient_ids)).all()
+        patients = db.query(Patient).filter(
+            Patient.id.in_(patient_ids),
+            Patient.organization_id == current_user.get("organization_id"),
+            Patient.status == "Active"
+        ).all()
     else:
         raise HTTPException(403, "Permission denied")
 
+    # Batched instead of N+1: this used to run 6 separate queries PER PATIENT (latest vital,
+    # pending-task count, overdue-task count, active assignment, nurse lookup, has-notes
+    # check) -- verified live during a large-scale test run, at ~220 active patients in one
+    # org this endpoint (called on every ipd.html page load) got slow enough to blow past a
+    # 45-second page-load timeout. A real hospital ward with a sizeable active census would
+    # hit the exact same wall. Every one of these is now one query for the whole roster,
+    # regardless of how many patients are on it.
+    patient_ids = [p.id for p in patients]
+    if not patient_ids:
+        return []
+
+    latest_vital_by_patient = {}
+    for v in db.query(Vital).filter(Vital.patient_id.in_(patient_ids)).order_by(Vital.recorded_at.desc()).all():
+        latest_vital_by_patient.setdefault(v.patient_id, v)
+
+    tasks_by_patient = defaultdict(list)
+    for t in db.query(Task).filter(Task.patient_id.in_(patient_ids)).all():
+        tasks_by_patient[t.patient_id].append(t)
+
+    active_assignment_by_patient = {
+        a.patient_id: a for a in db.query(NurseAssignment).filter(
+            NurseAssignment.patient_id.in_(patient_ids), NurseAssignment.status == "Active"
+        ).all()
+    }
+    nurse_ids = {a.nurse_id for a in active_assignment_by_patient.values()}
+    nurse_email_by_id = {u.id: u.email for u in db.query(User).filter(User.id.in_(nurse_ids)).all()} if nurse_ids else {}
+
+    patients_with_notes = {
+        row[0] for row in db.query(NursingNote.patient_id).filter(NursingNote.patient_id.in_(patient_ids)).distinct().all()
+    }
+
+    now = datetime.utcnow()
     result = []
     for p in patients:
-        latest_vital = db.query(Vital).filter(Vital.patient_id == p.id).order_by(Vital.recorded_at.desc()).first()
-        pending_tasks = db.query(Task).filter(Task.patient_id == p.id, Task.status != "Completed").count()
+        latest_vital = latest_vital_by_patient.get(p.id)
+        patient_tasks = tasks_by_patient.get(p.id, [])
+        pending_tasks = sum(1 for t in patient_tasks if t.status != "Completed")
+        overdue_tasks = sum(
+            1 for t in patient_tasks
+            if t.status != "Completed" and t.due_date is not None and t.due_date < now
+        )
+        active_assignment = active_assignment_by_patient.get(p.id)
+        assigned_nurse = None
+        if active_assignment:
+            assigned_nurse = {"id": active_assignment.nurse_id, "email": nurse_email_by_id.get(active_assignment.nurse_id)}
         abnormal = False
         if latest_vital:
             if (latest_vital.bp_systolic and latest_vital.bp_systolic > 140) or \
@@ -615,6 +1059,7 @@ def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session
             "bed": p.bed,
             "diagnosis": p.diagnosis,
             "status": p.status,
+            "assigned_nurse": assigned_nurse,
             "latest_vital": {
                 "bp": f"{latest_vital.bp_systolic}/{latest_vital.bp_diastolic}" if latest_vital else None,
                 "heart_rate": latest_vital.heart_rate if latest_vital else None,
@@ -623,8 +1068,9 @@ def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session
                 "recorded_at": latest_vital.recorded_at.isoformat() if latest_vital else None,
             } if latest_vital else None,
             "pending_tasks": pending_tasks,
+            "overdue_tasks": overdue_tasks,
             "abnormal": abnormal,
-            "has_nursing_notes": db.query(NursingNote).filter(NursingNote.patient_id == p.id).count() > 0
+            "has_nursing_notes": p.id in patients_with_notes,
         })
     return result
 
@@ -633,11 +1079,15 @@ async def create_ipd_patient(request: Request, current_user: dict = Depends(get_
     if not (is_head_nurse(current_user) or is_nursing_station(current_user)):
         raise HTTPException(403, "Only head nurse or nursing station can admit patients")
     data = await request.json()
+    name = data.get("name")
+    ward = data.get("ward")
+    if not name or not ward:
+        raise HTTPException(400, "name and ward are required")
     patient = Patient(
-        name=data["name"],
+        name=name,
         age=data.get("age"),
         gender=data.get("gender"),
-        ward=data["ward"],
+        ward=ward,
         bed=data.get("bed"),
         diagnosis=data.get("diagnosis"),
         organization_id=current_user.get("organization_id"),
@@ -654,12 +1104,20 @@ async def assign_patient(request: Request, current_user: dict = Depends(get_curr
     if not is_head_nurse(current_user):
         raise HTTPException(403, "Only head nurse can assign patients")
     data = await request.json()
-    patient_id = data["patient_id"]
-    nurse_id = data["nurse_id"]
-    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    patient_id = data.get("patient_id")
+    nurse_id = data.get("nurse_id")
+    if not patient_id or not nurse_id:
+        raise HTTPException(400, "patient_id and nurse_id are required")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
     if not patient:
         raise HTTPException(404, "Patient not found")
-    nurse = db.query(User).filter(User.id == nurse_id, User.role == "Nurse").first()
+    nurse = db.query(User).filter(
+        User.id == nurse_id, User.role == "Nurse",
+        User.organization_id == current_user.get("organization_id")
+    ).first()
     if not nurse:
         raise HTTPException(404, "Nurse not found")
     db.query(NurseAssignment).filter(NurseAssignment.patient_id == patient_id, NurseAssignment.status == "Active").update({"status": "Completed"})
@@ -670,12 +1128,69 @@ async def assign_patient(request: Request, current_user: dict = Depends(get_curr
               "assign_patient", f"assignments/{assignment.id}", "Success")
     return {"message": "Patient assigned"}
 
+@app.post("/api/ipd/unassign")
+async def unassign_patient(request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Explicitly close a patient's active nurse assignment without assigning a replacement --
+    e.g. a nurse goes home sick mid-shift and there's no immediate replacement. Previously the
+    only way to change an assignment was POST /api/ipd/assign, which requires a nurse_id and
+    therefore can't represent "nobody" as a state; a head nurse had no way to reflect that a
+    patient is temporarily unassigned other than leaving the (wrong) prior nurse's name showing.
+    """
+    if not is_head_nurse(current_user):
+        raise HTTPException(403, "Only head nurse can unassign patients")
+    data = await request.json()
+    patient_id = data.get("patient_id")
+    if not patient_id:
+        raise HTTPException(400, "patient_id required")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+    updated = db.query(NurseAssignment).filter(
+        NurseAssignment.patient_id == patient_id, NurseAssignment.status == "Active"
+    ).update({"status": "Completed"})
+    db.commit()
+    log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
+              "unassign_patient", f"patients/{patient_id}", "Success")
+    return {"message": "Patient unassigned" if updated else "Patient had no active assignment"}
+
+@app.get("/api/ipd/nurse-workload")
+def nurse_workload(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Active-patient count per nurse in the caller's organization, so a head nurse can see who's
+    already stretched thin before handing them another patient during assignment -- the assign
+    dropdown previously showed nurse email only, no load information at all.
+    """
+    if not is_head_nurse(current_user):
+        raise HTTPException(403, "Only head nurse can view nurse workload")
+    nurses = db.query(User).filter(
+        User.role == "Nurse", User.organization_id == current_user.get("organization_id")
+    ).order_by(User.email).all()
+    result = []
+    for n in nurses:
+        count = db.query(NurseAssignment).filter(
+            NurseAssignment.nurse_id == n.id, NurseAssignment.status == "Active"
+        ).count()
+        result.append({"id": n.id, "email": n.email, "status": n.status, "patient_count": count})
+    return result
+
 @app.post("/api/ipd/vitals")
 async def record_vital(request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     data = await request.json()
-    patient_id = data["patient_id"]
+    patient_id = data.get("patient_id")
+    if not patient_id:
+        raise HTTPException(400, "patient_id required")
     if not (is_nurse(current_user) or is_head_nurse(current_user)):
         raise HTTPException(403, "Only nurses and head nurses can record vitals")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
     if is_nurse(current_user):
         assignment = db.query(NurseAssignment).filter(
             NurseAssignment.patient_id == patient_id,
@@ -690,19 +1205,33 @@ async def record_vital(request: Request, current_user: dict = Depends(get_curren
         "{voice_text}"
         Return JSON with fields: bp_systolic, bp_diastolic, heart_rate, temperature, oxygen_sat, respiratory_rate, notes.
         """
-        vital_data = scribe._generate_json(prompt, temperature=0.3)
+        vital_data = await run_in_threadpool(scribe._generate_json, prompt, None, 0.3)
     else:
         vital_data = data
+    coerced = {
+        "bp_systolic": _coerce_number(vital_data.get("bp_systolic"), integer=True),
+        "bp_diastolic": _coerce_number(vital_data.get("bp_diastolic"), integer=True),
+        "heart_rate": _coerce_number(vital_data.get("heart_rate"), integer=True),
+        "temperature": _coerce_number(vital_data.get("temperature")),
+        "oxygen_sat": _coerce_number(vital_data.get("oxygen_sat"), integer=True),
+        "respiratory_rate": _coerce_number(vital_data.get("respiratory_rate"), integer=True),
+    }
+    notes_value = vital_data.get("notes", data.get("notes", ""))
+    notes_value = notes_value if isinstance(notes_value, str) else ("" if notes_value is None else str(notes_value))
+    if all(v is None for v in coerced.values()) and not notes_value.strip():
+        detail = ("Could not extract any vital signs from the voice note. Please try again or enter values manually."
+                   if voice_text else "At least one vital sign or a note is required.")
+        raise HTTPException(422, detail)
     vital = Vital(
         patient_id=patient_id,
         nurse_id=current_user["id"],
-        bp_systolic=vital_data.get("bp_systolic"),
-        bp_diastolic=vital_data.get("bp_diastolic"),
-        heart_rate=vital_data.get("heart_rate"),
-        temperature=vital_data.get("temperature"),
-        oxygen_sat=vital_data.get("oxygen_sat"),
-        respiratory_rate=vital_data.get("respiratory_rate"),
-        notes=vital_data.get("notes", data.get("notes", ""))
+        bp_systolic=coerced["bp_systolic"],
+        bp_diastolic=coerced["bp_diastolic"],
+        heart_rate=coerced["heart_rate"],
+        temperature=coerced["temperature"],
+        oxygen_sat=coerced["oxygen_sat"],
+        respiratory_rate=coerced["respiratory_rate"],
+        notes=notes_value
     )
     db.add(vital)
     db.commit()
@@ -714,6 +1243,12 @@ async def record_vital(request: Request, current_user: dict = Depends(get_curren
 def get_vitals(patient_id: int, limit: int = 10, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user) or is_doctor(current_user)):
         raise HTTPException(403, "Permission denied")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
     if is_nurse(current_user):
         assignment = db.query(NurseAssignment).filter(
             NurseAssignment.patient_id == patient_id,
@@ -736,18 +1271,66 @@ def get_vitals(patient_id: int, limit: int = 10, current_user: dict = Depends(ge
         "nurse_id": v.nurse_id
     } for v in vitals]
 
+@app.get("/api/ipd/patients/{patient_id}/active-medications")
+def get_patient_active_medications(patient_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    What a doctor needs to see BEFORE starting a ward round -- the patient's whole current
+    regimen and how many days into the stay they are -- not just what today's round adds.
+    """
+    if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user) or is_doctor(current_user)):
+        raise HTTPException(403, "Permission denied")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+    return {
+        "active_medications": get_active_medications(db, patient_id),
+        "admission_day": compute_admission_day(patient),
+    }
+
 @app.post("/api/ipd/tasks")
 async def create_task(request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     if not is_head_nurse(current_user):
         raise HTTPException(403, "Only head nurse can create tasks")
     data = await request.json()
+    patient_id = data.get("patient_id")
+    description = data.get("description")
+    if not patient_id or not description:
+        raise HTTPException(400, "patient_id and description are required")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
+    task_nurse_id = data.get("nurse_id")
+    if task_nurse_id:
+        nurse = db.query(User).filter(
+            User.id == task_nurse_id, User.role == "Nurse",
+            User.organization_id == current_user.get("organization_id")
+        ).first()
+        if not nurse:
+            raise HTTPException(404, "Nurse not found")
+    due_date = None
+    if data.get("due_date"):
+        try:
+            due_date = datetime.fromisoformat(data["due_date"])
+        except (ValueError, TypeError):
+            raise HTTPException(400, "due_date must be a valid ISO 8601 datetime")
+    task_type = data.get("task_type") or "General"
+    if task_type not in ("Medication", "Lab", "Observation", "General"):
+        task_type = "General"
     task = Task(
-        patient_id=data["patient_id"],
-        nurse_id=data.get("nurse_id"),
+        patient_id=patient_id,
+        nurse_id=task_nurse_id,
         assigned_by=current_user["id"],
-        description=data["description"],
-        due_date=datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None,
-        status="Pending"
+        description=description,
+        due_date=due_date,
+        status="Pending",
+        task_type=task_type,
+        source="Manual",
     )
     db.add(task)
     db.commit()
@@ -759,6 +1342,12 @@ async def create_task(request: Request, current_user: dict = Depends(get_current
 async def update_task(task_id: int, request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
+        raise HTTPException(404, "Task not found")
+    patient = db.query(Patient).filter(
+        Patient.id == task.patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
         raise HTTPException(404, "Task not found")
     if not (is_head_nurse(current_user) or (is_nurse(current_user) and task.nurse_id == current_user["id"])):
         raise HTTPException(403, "Not authorized to update this task")
@@ -774,10 +1363,56 @@ async def update_task(task_id: int, request: Request, current_user: dict = Depen
               "update_task", f"tasks/{task_id}", "Success")
     return {"message": "Task updated"}
 
+@app.get("/api/ipd/tasks")
+def get_my_tasks(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    A nurse's (or head nurse's) tasks across every patient in one call, instead of the
+    per-patient endpoint below looped client-side once per patient on the roster -- that
+    N-request pattern doesn't scale for a nurse with many assigned patients.
+    """
+    if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user) or is_doctor(current_user)):
+        raise HTTPException(403, "Permission denied")
+    org_patient_ids = {p.id for p in db.query(Patient.id).filter(
+        Patient.organization_id == current_user.get("organization_id")
+    ).all()}
+    if is_nurse(current_user):
+        assigned_ids = {a.patient_id for a in db.query(NurseAssignment).filter(
+            NurseAssignment.nurse_id == current_user["id"],
+            NurseAssignment.status == "Active"
+        ).all()}
+        target_ids = org_patient_ids & assigned_ids
+    else:
+        target_ids = org_patient_ids
+    if not target_ids:
+        return []
+    tasks = db.query(Task).filter(Task.patient_id.in_(target_ids)).order_by(Task.created_at.desc()).all()
+    patients = {p.id: p.name for p in db.query(Patient).filter(Patient.id.in_(target_ids)).all()}
+    now = datetime.utcnow()
+    return [{
+        "id": t.id,
+        "patient_id": t.patient_id,
+        "patient_name": patients.get(t.patient_id),
+        "description": t.description,
+        "status": t.status,
+        "task_type": t.task_type,
+        "source": t.source,
+        "due_date": t.due_date.isoformat() if t.due_date else None,
+        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+        "nurse_id": t.nurse_id,
+        "notes": t.notes,
+        "is_overdue": bool(t.due_date and t.status != "Completed" and t.due_date < now)
+    } for t in tasks]
+
 @app.get("/api/ipd/tasks/{patient_id}")
 def get_tasks(patient_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     if not (is_head_nurse(current_user) or is_nursing_station(current_user) or is_nurse(current_user) or is_doctor(current_user)):
         raise HTTPException(403, "Permission denied")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
     if is_nurse(current_user):
         assignment = db.query(NurseAssignment).filter(
             NurseAssignment.patient_id == patient_id,
@@ -787,18 +1422,24 @@ def get_tasks(patient_id: int, current_user: dict = Depends(get_current_user), d
         if not assignment:
             raise HTTPException(403, "Not assigned to this patient")
     tasks = db.query(Task).filter(Task.patient_id == patient_id).order_by(Task.created_at.desc()).all()
+    now = datetime.utcnow()
     return [{
         "id": t.id,
         "description": t.description,
         "status": t.status,
+        "task_type": t.task_type,
+        "source": t.source,
         "due_date": t.due_date.isoformat() if t.due_date else None,
         "completed_at": t.completed_at.isoformat() if t.completed_at else None,
         "nurse_id": t.nurse_id,
-        "notes": t.notes
+        "notes": t.notes,
+        "is_overdue": bool(t.due_date and t.status != "Completed" and t.due_date < now)
     } for t in tasks]
 
 @app.post("/api/ipd/voice-to-vitals")
 async def voice_to_vitals(request: Request, current_user: dict = Depends(get_current_user)):
+    if not (is_nurse(current_user) or is_head_nurse(current_user)):
+        raise HTTPException(403, "Only nurses and head nurses can use voice-to-vitals extraction")
     data = await request.json()
     voice_text = data.get("voice_text")
     if not voice_text:
@@ -807,7 +1448,7 @@ async def voice_to_vitals(request: Request, current_user: dict = Depends(get_cur
     "{voice_text}"
     Return JSON with fields: bp_systolic, bp_diastolic, heart_rate, temperature, oxygen_sat, respiratory_rate, notes.
     """
-    result = scribe._generate_json(prompt, temperature=0.3)
+    result = await run_in_threadpool(scribe._generate_json, prompt, None, 0.3)
     return result
 
 @app.post("/api/ipd/nurse-consult")
@@ -819,6 +1460,12 @@ async def nurse_consult(request: Request, current_user: dict = Depends(get_curre
         raise HTTPException(400, "patient_id and voice_text required")
     if not (is_nurse(current_user) or is_head_nurse(current_user)):
         raise HTTPException(403, "Only nurses and head nurses can perform consultation")
+    patient = db.query(Patient).filter(
+        Patient.id == patient_id,
+        Patient.organization_id == current_user.get("organization_id")
+    ).first()
+    if not patient:
+        raise HTTPException(404, "Patient not found")
     if is_nurse(current_user):
         assignment = db.query(NurseAssignment).filter(
             NurseAssignment.patient_id == patient_id,
@@ -841,36 +1488,17 @@ Example:
   "labs": [{{"test": "Hb", "result": "12.5"}}, {{"test": "WBC", "result": "8000"}}],
   "nursing_note": {{"subjective": "Patient reports headache", "objective": "Vitals stable", "assessment": "Mild dehydration", "plan": "Monitor fluids"}}
 }}"""
-    result = scribe._generate_json(prompt, temperature=0.3)
+    result = await run_in_threadpool(scribe._generate_json, prompt, None, 0.3)
     if not result:
         result = {"vitals": [], "labs": [], "nursing_note": {}}
-    for v in result.get("vitals", []):
-        vital = Vital(
-            patient_id=patient_id,
-            nurse_id=current_user["id"],
-            bp_systolic=None,
-            bp_diastolic=None,
-            heart_rate=None,
-            temperature=None,
-            oxygen_sat=None,
-            respiratory_rate=None,
-            notes=json.dumps({"parameter": v.get("parameter"), "value": v.get("value"), "unit": v.get("unit")})
-        )
-        db.add(vital)
-    lab_text = "Labs:\n" + "\n".join([f"{l.get('test')}: {l.get('result')}" for l in result.get("labs", [])])
-    nursing_data = result.get("nursing_note", {})
-    note_text = f"Subjective: {nursing_data.get('subjective', '')}\nObjective: {nursing_data.get('objective', '')}\nAssessment: {nursing_data.get('assessment', '')}\nPlan: {nursing_data.get('plan', '')}\n\n{lab_text}"
-    nursing_note = NursingNote(
-        patient_id=patient_id,
-        nurse_id=current_user["id"],
-        notes=note_text,
-        voice_transcript=voice_text
-    )
-    db.add(nursing_note)
-    db.commit()
-    log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
-              "nurse_consult", f"patients/{patient_id}", "Success", "Nurse consultation recorded")
-    return {"message": "Consultation saved", "vitals": result.get("vitals", []), "labs": result.get("labs", []), "nursing_note": nursing_data}
+    nursing_data = result.get("nursing_note", {}) or {}
+    # NOTE: this endpoint is a preview/extraction step only -- it must NOT write to the
+    # database. The frontend flow is mic -> Process (this endpoint) -> nurse reviews/edits ->
+    # Save (POST /api/ipd/vitals + POST /api/nursing-notes persist the reviewed data). This
+    # endpoint used to insert a Vital per extracted item and a NursingNote immediately, before
+    # any review -- so every consult left a raw, unreviewed, un-deletable duplicate in the
+    # chart even if the nurse edited the draft (or discarded it) before Save. See CHANGELOG.md.
+    return {"message": "Extracted for review", "vitals": result.get("vitals", []), "labs": result.get("labs", []), "nursing_note": nursing_data}
 
 @app.post("/api/drug-interactions")
 async def drug_interactions(request: Request, current_user: dict = Depends(get_current_user)):
@@ -881,20 +1509,12 @@ async def drug_interactions(request: Request, current_user: dict = Depends(get_c
     drug_names = [m.get("drugName", "") for m in medications if m.get("drugName")]
     if not drug_names:
         return {"interactions": [], "message": "No valid drug names provided."}
-    prompt = f"""You are a clinical pharmacologist. Given the following list of medications, analyze for potential drug-drug interactions.
-Medications: {', '.join(drug_names)}
-For each interaction found, provide:
-- Drug Pair (e.g., 'Drug A - Drug B')
-- Severity (Mild, Moderate, Severe)
-- Reason (mechanism or clinical effect)
-- Recommendation (brief clinical advice)
-Return a JSON array of objects with keys: drug_pair, severity, reason, recommendation.
-If no interactions, return an empty array [].
-"""
-    result = scribe._generate_json(prompt, temperature=0.3)
-    if not isinstance(result, list):
-        result = []
-    return {"interactions": result}
+    # See tasks_engine.check_drug_interactions for why this must ask the LLM for a
+    # {"interactions": [...]} object rather than a bare array (scribe._generate_json's
+    # contract is dict-only -- a bare-array prompt silently made this endpoint always
+    # report "no interactions found" regardless of input).
+    interactions = await run_in_threadpool(check_drug_interactions, drug_names)
+    return {"interactions": interactions}
 
 @app.get("/api/health")
 def health():

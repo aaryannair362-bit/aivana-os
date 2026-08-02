@@ -2,8 +2,24 @@ venv/
 __pycache__/
 *.pyc
 .env
+.env*
 .DS_Store
+Thumbs.db
 *.db
 node_modules/
-.vercel
-.env*
+.coverage
+
+# Test/tooling caches and runtime state -- regenerable, not source
+.pytest_cache/
+.claude/
+
+# Generated test-run artifacts (transcripts, extracted JSON, rendered PDFs, run logs) --
+# reproducible via `pytest tests/scenarios -m e2e`, `pytest tests/e2e`, and
+# `python -m tests.scale.runner`. Keep the repo to source, not test output.
+final test output/
+single test output/
+tests/scale/results/
+
+# Editor/IDE
+.vscode/
+.idea/

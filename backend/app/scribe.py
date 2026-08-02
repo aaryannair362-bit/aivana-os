@@ -1,13 +1,17 @@
 import json
 import re
+import time
 import requests
 from .config import settings
+
+MAX_RATE_LIMIT_RETRIES = 3
 
 class ScribeEngine:
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
         self.model = settings.GROQ_MODEL
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
+        self._reasoning_format_supported = True
         print(f"DEBUG: GROQ_API_KEY present: {bool(self.api_key)}")
         print(f"DEBUG: GROQ_API_KEY length: {len(self.api_key) if self.api_key else 0}")
         print(f"DEBUG: GROQ_MODEL: {self.model}")
@@ -27,7 +31,7 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
 5. Handle spoken names, medicines, or measurements gracefully
 6. CLINICAL FINDINGS IN HPI: Any clinical findings mentioned MUST be explicitly included in the "hpi" field"""
 
-    def _call_groq_api(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
+    def _call_groq_api(self, prompt: str, system: str = None, temperature: float = 0.3, _retry: int = 0) -> str:
         if not self.api_key:
             raise ValueError("Groq API key not configured. Set GROQ_API_KEY in environment.")
 
@@ -39,11 +43,45 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
                 {"role": "user", "content": prompt}
             ],
             "temperature": temperature,
-            "max_tokens": 2000
+            "max_tokens": 3000,
         }
+        if self._reasoning_format_supported:
+            # Reasoning-capable models (e.g. the qwen3 line) emit a <think>...</think>
+            # chain-of-thought block INSIDE `content` before the actual answer by default,
+            # consuming the token budget on reasoning alone -- verified live, a call with
+            # this omitted on such a model hit max_tokens mid-<think> and returned ZERO
+            # actual answer content, every time. "hidden" moves the reasoning out of
+            # `content` entirely. Not every model supports this param though (verified live:
+            # a non-reasoning model 400s with `reasoning_format is not supported with this
+            # model`) -- self._reasoning_format_supported starts True and flips to False
+            # below the first time that happens, so we stop asking for it on this model for
+            # the rest of the process instead of eating a failed request every single call.
+            payload["reasoning_format"] = "hidden"
 
         try:
             response = requests.post(self.base_url, headers=headers, json=payload, timeout=60)
+            if (
+                response.status_code == 400 and self._reasoning_format_supported
+                and "reasoning_format" in response.text
+            ):
+                self._reasoning_format_supported = False
+                return self._call_groq_api(prompt, system, temperature, _retry=_retry)
+            if response.status_code == 429 and _retry < MAX_RATE_LIMIT_RETRIES:
+                # A 429 here used to fall straight through to _generate_json's fallback --
+                # silently degrading a real consultation to an empty draft on nothing more
+                # than a transient rate-limit blip. Retry_after gives transient limiting a
+                # real chance to clear before giving up -- but MUST be capped: verified live,
+                # under sustained quota pressure Groq's Retry-After can be minutes (even
+                # 25+ minutes), and honoring that literally would hang a single doctor's
+                # consultation request for that long. Capping means we sometimes retry before
+                # the server says we're truly clear (and get 429'd again, consuming another
+                # attempt), which is the right tradeoff -- a slightly wasted retry beats
+                # blocking a real request for tens of minutes.
+                retry_after = response.headers.get("retry-after")
+                wait = min(float(retry_after), 20) if retry_after else min(3 * (2 ** _retry), 20)
+                print(f"Groq 429 rate limited, retrying in {wait:.1f}s (attempt {_retry + 1}/{MAX_RATE_LIMIT_RETRIES})")
+                time.sleep(wait)
+                return self._call_groq_api(prompt, system, temperature, _retry=_retry + 1)
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
@@ -57,8 +95,11 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
         try:
             raw = self._call_groq_api(prompt, system, temperature)
             print(f"RAW RESPONSE: {raw[:500]}...")  # log first 500 chars
-            # Clean markdown code fences
-            cleaned = raw.strip()
+            # Defense-in-depth: _call_groq_api already requests reasoning_format="hidden" so
+            # a <think>...</think> block should never appear in `content`, but strip one out
+            # if it does anyway (e.g. a future model/provider change reintroduces it) rather
+            # than let it corrupt every downstream json.loads.
+            cleaned = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
             if cleaned.startswith("```json"):
                 cleaned = cleaned[7:]
             if cleaned.startswith("```"):
@@ -68,11 +109,32 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
             cleaned = cleaned.strip()
             # Try parsing as JSON
             result = json.loads(cleaned)
+            if not isinstance(result, dict):
+                # This function is documented (and every caller assumes) to return a dict.
+                # Valid JSON that happens to parse to a list/string/number ("[1, 2, 3]", "42",
+                # "true") is not a parse error, so it wouldn't hit the except clause below --
+                # but every caller immediately does result.get(...), which would crash with a
+                # raw AttributeError. Treat a non-dict result the same as a parse failure.
+                print(f"Groq returned valid JSON of the wrong shape ({type(result).__name__}, expected dict): {cleaned[:200]}")
+                return self._fallback_extract(raw)
             return result
         except json.JSONDecodeError as e:
             print(f"JSON parsing error: {e}")
             print(f"Raw content that failed: {raw[:1000]}")
-            # Attempt fallback extraction
+            # Some models wrap the JSON in explanatory prose despite the prompt asking for
+            # pure JSON (verified live: "Based on the transcript, here's..." before the
+            # object, "Note that the hpi field is empty because..." after it) -- the fence
+            # stripping above only handles a response that's ENTIRELY the JSON (optionally
+            # fenced), not JSON embedded inside other text. Try the outermost {...} substring
+            # before giving up to the much cruder regex fallback.
+            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+            if match:
+                try:
+                    result = json.loads(match.group(0))
+                    if isinstance(result, dict):
+                        return result
+                except json.JSONDecodeError:
+                    pass
             return self._fallback_extract(raw)
         except Exception as e:
             print(f"Unexpected error in _generate_json: {e}")
@@ -139,6 +201,24 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
                 result["medications"] = [{"drugName": m[0], "dose": m[1], "frequency": "N/A", "route": "Oral", "duration": "N/A"} for m in matches[:5]]
         return result
 
+    @staticmethod
+    def _coerce_string_fields(result: dict, fields) -> dict:
+        """
+        The model doesn't always respect "return this as a string" -- verified live: a real
+        call returned differentialDiagnosis as a JSON array instead of a comma-separated
+        string, which crashed the Consultation insert (differential_diagnosis is a Text
+        column; sqlite3/SQLAlchemy can't bind a Python list to it). Every field the prompt
+        asks for as a string gets normalized here before it reaches any caller, rather than
+        trusting the model's output shape at each call site.
+        """
+        for field in fields:
+            value = result.get(field)
+            if isinstance(value, list):
+                result[field] = ", ".join(str(v) for v in value)
+            elif value is not None and not isinstance(value, str):
+                result[field] = str(value)
+        return result
+
     def scribe_transcript(self, transcript: str) -> dict:
         prompt = f"""Process the following spoken consultation transcript and structure it perfectly.
 
@@ -165,7 +245,9 @@ Return a JSON object with the following structure:
         for key in default:
             if key not in result or result[key] is None:
                 result[key] = default[key]
-        return result
+        return self._coerce_string_fields(
+            result, ("chiefComplaint", "hpi", "primaryDiagnosis", "differentialDiagnosis", "advice")
+        )
 
     def clinical_helper(self, current_draft: dict, query: str) -> str:
         prompt = f"""You are an expert physician companion advising on this prescription.
@@ -195,7 +277,64 @@ Keep drug names in English. Translate descriptions, instructions, and test names
         for key in default:
             if key not in result:
                 result[key] = default[key]
-        return result
+        return self._coerce_string_fields(
+            result, ("chiefComplaint", "hpi", "primaryDiagnosis", "differentialDiagnosis", "advice")
+        )
+
+    def generate_discharge_summary(self, context: dict) -> dict:
+        """
+        context: {
+            "patient_name", "age", "gender", "ward", "admission_date", "diagnosis",
+            "vitals": [{"recorded_at", "bp_systolic", "bp_diastolic", "heart_rate",
+                        "temperature", "oxygen_sat", "respiratory_rate", "notes"}, ...],
+            "nursing_notes": [{"created_at", "notes"}, ...],
+            "tasks": [{"description", "status"}, ...],
+            "consultations": [{"chief_complaint", "primary_diagnosis", "medications", "advice"}, ...],
+        }
+        Summarizes an inpatient's full stay into a discharge document. Mirrors
+        scribe_transcript's default-backfill contract: never raises, always returns every key.
+        """
+        prompt = f"""You are a clinician preparing a discharge summary for an inpatient. Using ONLY the
+information provided below (do not invent facts not present here), write a structured discharge summary.
+
+Patient: {context.get('patient_name', '')}, {context.get('age', 'unknown age')}, {context.get('gender', '')}
+Ward: {context.get('ward', '')}
+Admission date: {context.get('admission_date', '')}
+Admission diagnosis: {context.get('diagnosis', '')}
+
+Vitals recorded during stay (chronological):
+{json.dumps(context.get('vitals', []), indent=2)}
+
+Nursing notes (chronological):
+{json.dumps(context.get('nursing_notes', []), indent=2)}
+
+Tasks/interventions:
+{json.dumps(context.get('tasks', []), indent=2)}
+
+Doctor consultations linked to this patient:
+{json.dumps(context.get('consultations', []), indent=2)}
+
+Return a JSON object with exactly these keys:
+{{
+    "admissionSummary": "Brief summary of why the patient was admitted and their condition on arrival",
+    "hospitalCourse": "Narrative of how the patient's condition evolved during the stay, based on the vitals/notes/tasks above",
+    "dischargeDiagnosis": "Final diagnosis at discharge",
+    "medicationsAtDischarge": [{{"drugName": "", "dose": "", "frequency": "", "duration": ""}}],
+    "followUpInstructions": "Advice, warnings, and follow-up plan for the patient",
+    "conditionAtDischarge": "One-line clinical status at discharge (e.g. stable, improved, guarded)"
+}}
+If information for a field is not present in the input above, use an empty string or empty array -- do not fabricate."""
+        result = self._generate_json(prompt, temperature=0.3)
+        default = {
+            "admissionSummary": "", "hospitalCourse": "", "dischargeDiagnosis": "",
+            "medicationsAtDischarge": [], "followUpInstructions": "", "conditionAtDischarge": ""
+        }
+        for key in default:
+            if key not in result or result[key] is None:
+                result[key] = default[key]
+        return self._coerce_string_fields(
+            result, ("admissionSummary", "hospitalCourse", "dischargeDiagnosis", "followUpInstructions", "conditionAtDischarge")
+        )
 
     def is_available(self) -> bool:
         if not self.api_key:

@@ -80,6 +80,20 @@
             .control-bar { flex-direction: column; align-items: stretch; }
             .header-right { width: 100%; justify-content: flex-start; }
         }
+        @media print {
+            /* body itself (not just #app) carries the dark theme's background/min-height --
+               override both, or the empty space below the printed content stays painted
+               #0a0e17 instead of white. */
+            body { background: white !important; min-height: 0 !important; }
+            /* #app is the entire dark-themed dashboard (sidebar, header, all views) --
+               display:none removes it from layout entirely, not just paints it invisible,
+               so it can't leave a dark body-background box or force a spillover blank page. */
+            body > *:not(#print-modal) { display: none !important; }
+            #print-modal * { visibility: hidden; }
+            #print-preview, #print-preview * { visibility: visible; }
+            #print-modal { position: static !important; background: none !important; }
+            #print-preview { position: absolute; left: 0; top: 0; width: 100%; background: white; }
+        }
     </style>
 </head>
 <body>
@@ -88,6 +102,7 @@
         <h1>🏥 AIVANA OPD Scribe</h1>
         <div class="header-right">
             <span id="ollama-status">🔄 Checking...</span>
+            <a href="/ipd.html" class="btn-outline" style="text-decoration:none; display:inline-block;">🏥 Ward Rounds</a>
             <span id="user-email" style="color:#e2e8f0;"></span>
             <button id="logout-btn" class="btn-outline">Logout</button>
         </div>
@@ -131,6 +146,7 @@
                             <button id="clear-draft-btn" class="btn-outline">Clear</button>
                             <button id="print-btn" class="btn-primary">🖨️ Prepare Rx Sheet</button>
                             <button id="check-interactions-btn" class="btn-secondary">🔬 Check Interactions</button>
+                            <button id="finalize-btn" class="btn-primary" style="background:linear-gradient(135deg, #34d399, #059669);">✅ Finalize &amp; Save</button>
                         </div>
                     </div>
                     <div class="draft-fields">
@@ -187,7 +203,7 @@
 </div>
 <script>
 const API_BASE = '/api';
-const accessToken = localStorage.getItem('access_token');
+let accessToken = localStorage.getItem('access_token');
 if (!accessToken) window.location.href = '/index.html';
 
 let currentUser = null;
@@ -195,8 +211,11 @@ let refreshToken = localStorage.getItem('refresh_token') || null;
 let isConsulting = false;
 let recognition = null;
 let accumulatedTranscript = '';
-let currentFinal = '';
 let selectedPatientId = null;
+let currentConsultationId = null;
+let currentPatientName = '';
+let currentPatientAge = '';
+let currentPatientGender = '';
 
 const transcriptInput = document.getElementById('transcript-input');
 const startBtn = document.getElementById('start-consult-btn');
@@ -310,7 +329,6 @@ function startSpeechRecognition() {
             transcriptInput.disabled = false;
             transcriptInput.value = '';
             accumulatedTranscript = '';
-            currentFinal = '';
             clearDraft();
             setMicStatus('listening', 'Listening...');
             analysisStatus.className = '';
@@ -326,8 +344,8 @@ function startSpeechRecognition() {
                     if (event.results[i].isFinal) final += event.results[i][0].transcript + ' ';
                     else interim += event.results[i][0].transcript;
                 }
-                if (final) { currentFinal += final; accumulatedTranscript += final; }
-                const fullText = (accumulatedTranscript + ' ' + currentFinal + ' ' + interim).trim();
+                if (final) { accumulatedTranscript += final; }
+                const fullText = (accumulatedTranscript + ' ' + interim).trim();
                 transcriptInput.value = fullText;
                 transcriptInput.scrollTop = transcriptInput.scrollHeight;
             };
@@ -411,8 +429,10 @@ async function processConsultation(transcript) {
             return;
         }
         populateDraft(data);
+        currentConsultationId = data.id || null;
+        const taskNote = data.tasks_created ? ` (${data.tasks_created} task${data.tasks_created === 1 ? '' : 's'} sent to nursing)` : '';
         analysisStatus.className = 'success';
-        analysisStatus.textContent = '✅ Prescription ready!';
+        analysisStatus.textContent = `✅ Prescription ready!${taskNote} Review and click Finalize & Save when done.`;
         loadConsultations();
         loadMetrics();
         await checkInteractions();
@@ -420,6 +440,24 @@ async function processConsultation(transcript) {
         analysisStatus.className = 'error';
         analysisStatus.textContent = '❌ Network error';
         console.error(e);
+    }
+}
+
+function renderInteractions(interactions) {
+    const container = document.getElementById('interaction-results');
+    const section = document.getElementById('interaction-section');
+    section.style.display = 'block';
+    if (interactions && interactions.length > 0) {
+        container.innerHTML = interactions.map(i => `
+            <div class="interaction-item ${i.severity ? i.severity.toLowerCase() : ''}">
+                <div class="drug-pair">${i.drug_pair || 'Unknown pair'}</div>
+                <div class="severity" style="color:${i.severity === 'Severe' ? '#dc2626' : i.severity === 'Moderate' ? '#f59e0b' : '#22d3ee'}">Severity: ${i.severity || 'Unknown'}</div>
+                <div class="reason">Reason: ${i.reason || 'No reason provided'}</div>
+                <div class="recommendation">Recommendation: ${i.recommendation || 'Consult pharmacist'}</div>
+            </div>
+        `).join('');
+    } else {
+        container.innerHTML = '<div style="color:#34d399;">✅ No drug interactions detected.</div>';
     }
 }
 
@@ -435,22 +473,7 @@ async function checkInteractions() {
     });
     if (res.ok) {
         const data = await res.json();
-        const container = document.getElementById('interaction-results');
-        const section = document.getElementById('interaction-section');
-        if (data.interactions && data.interactions.length > 0) {
-            section.style.display = 'block';
-            container.innerHTML = data.interactions.map(i => `
-                <div class="interaction-item ${i.severity ? i.severity.toLowerCase() : ''}">
-                    <div class="drug-pair">${i.drug_pair || 'Unknown pair'}</div>
-                    <div class="severity" style="color:${i.severity === 'Severe' ? '#dc2626' : i.severity === 'Moderate' ? '#f59e0b' : '#22d3ee'}">Severity: ${i.severity || 'Unknown'}</div>
-                    <div class="reason">Reason: ${i.reason || 'No reason provided'}</div>
-                    <div class="recommendation">Recommendation: ${i.recommendation || 'Consult pharmacist'}</div>
-                </div>
-            `).join('');
-        } else {
-            section.style.display = 'block';
-            container.innerHTML = '<div style="color:#34d399;">✅ No drug interactions detected.</div>';
-        }
+        renderInteractions(data.interactions);
     }
 }
 
@@ -473,9 +496,57 @@ function getMedications() {
     return meds;
 }
 
+function getLabTests() {
+    const items = document.querySelectorAll('#lab-tests-list .lab-item span');
+    const labs = [];
+    items.forEach(span => {
+        const text = span.textContent.trim();
+        if (text && !text.includes('No lab tests recommended')) labs.push(text);
+    });
+    return labs;
+}
+
 document.getElementById('check-interactions-btn').addEventListener('click', checkInteractions);
 
+async function finalizeConsultation() {
+    if (!currentConsultationId) {
+        analysisStatus.className = 'error';
+        analysisStatus.textContent = '⚠️ Nothing to finalize yet — run a consultation first.';
+        return;
+    }
+    const payload = {
+        chiefComplaint: document.getElementById('chief-complaint').value,
+        hpi: document.getElementById('hpi').value,
+        primaryDiagnosis: document.getElementById('primary-diagnosis').value,
+        differentialDiagnosis: document.getElementById('differential-diagnosis').value,
+        advice: document.getElementById('advice').value,
+        medications: getMedications(),
+        labTests: getLabTests(),
+    };
+    const res = await apiRequest(`/consultations/${currentConsultationId}/finalize`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        analysisStatus.className = 'error';
+        analysisStatus.textContent = '❌ Error finalizing: ' + (data.detail || 'Failed');
+        return;
+    }
+    const taskNote = data.tasks_created ? ` — ${data.tasks_created} task${data.tasks_created === 1 ? '' : 's'} sent to nursing staff.` : '';
+    analysisStatus.className = 'success';
+    analysisStatus.textContent = `✅ Finalized and saved.${taskNote}`;
+    if (data.interaction_warnings && data.interaction_warnings.length > 0) {
+        renderInteractions(data.interaction_warnings);
+    }
+    loadConsultations();
+}
+document.getElementById('finalize-btn').addEventListener('click', finalizeConsultation);
+
 function populateDraft(data) {
+    currentPatientName = data.patient_name || '';
+    currentPatientAge = data.patient_age || '';
+    currentPatientGender = data.patient_gender || '';
     document.getElementById('chief-complaint').value = data.chiefComplaint || '';
     document.getElementById('hpi').value = data.hpi || '';
     document.getElementById('primary-diagnosis').value = data.primaryDiagnosis || '';
@@ -520,6 +591,10 @@ function clearDraft() {
     document.getElementById('medications-list').innerHTML = '';
     document.getElementById('lab-tests-list').innerHTML = '';
     document.getElementById('interaction-section').style.display = 'none';
+    currentConsultationId = null;
+    currentPatientName = '';
+    currentPatientAge = '';
+    currentPatientGender = '';
 }
 document.getElementById('clear-draft-btn').addEventListener('click', clearDraft);
 
@@ -607,17 +682,24 @@ function updatePrintPreview() {
     labs.forEach((span, idx) => {
         labHtml += `<div>${idx+1}. ${span.textContent}</div>`;
     });
+    const recordNo = `AIV-${new Date().getFullYear()}-${String(Math.floor(100000 + Math.random() * 900000))}`;
     preview.innerHTML = `
         <div style="max-width:700px;margin:0 auto;font-size:11px;">
-            <div style="border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
-                <h2 style="font-size:18px;font-weight:700;margin:0;">Dr. ${document.getElementById('user-email')?.textContent || 'Clinician'}</h2>
-                <p style="font-size:10px;color:#64748b;margin:2px 0;">Reg No: KMC-90412</p>
-                <p style="font-size:10px;color:#64748b;margin:0;">Department of General Medicine</p>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
+                <div>
+                    <h2 style="font-size:18px;font-weight:700;margin:0;">Dr. ${document.getElementById('user-email')?.textContent || 'Clinician'}</h2>
+                    <p style="font-size:10px;color:#64748b;margin:2px 0;">Reg No: KMC-90412</p>
+                    <p style="font-size:10px;color:#64748b;margin:0;">Department of General Medicine</p>
+                </div>
+                <div style="text-align:right;">
+                    <p style="font-size:13px;font-weight:700;margin:0;letter-spacing:0.5px;">AIVANA CLINICAL OPD</p>
+                    <p style="font-size:10px;color:#64748b;margin:2px 0 0;">Outpatient Department</p>
+                </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;background:#f1f5f9;padding:12px;border-radius:6px;margin-bottom:16px;font-size:10px;">
-                <div><strong>PATIENT</strong><br>${document.getElementById('patient-select')?.options[document.getElementById('patient-select').selectedIndex]?.text || 'N/A'}</div>
-                <div><strong>AGE/SEX</strong><br>N/A</div>
-                <div><strong>RECORD NO</strong><br>${'AIV-'+Date.now().toString().slice(-8)}</div>
+                <div><strong>PATIENT</strong><br>${currentPatientName || document.getElementById('patient-select')?.options[document.getElementById('patient-select').selectedIndex]?.text || 'N/A'}</div>
+                <div><strong>AGE/SEX</strong><br>${(currentPatientAge ? currentPatientAge + ' yrs' : '') + (currentPatientAge && currentPatientGender ? ' / ' : '') + (currentPatientGender || '') || 'N/A'}</div>
+                <div><strong>RECORD NO</strong><br>${recordNo}</div>
                 <div><strong>DATE</strong><br>${new Date().toISOString().split('T')[0]}</div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
@@ -689,6 +771,7 @@ async function loadConsultation(id) {
             populateDraft(data);
             transcriptInput.value = data.raw_transcript || '';
             selectedPatientId = data.patient_id || null;
+            currentConsultationId = data.id || null;
             if (selectedPatientId) patientSelect.value = selectedPatientId;
             showView('scribe');
         }

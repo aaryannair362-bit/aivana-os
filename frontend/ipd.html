@@ -60,6 +60,24 @@
         .del-btn:hover { color: #dc2626; }
         .patient-list-item { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; cursor: pointer; transition: border-color 0.2s; }
         .patient-list-item:hover { border-color: #06b6d4; }
+        .stat-tile { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 16px; min-width: 110px; }
+        .stat-tile .stat-value { font-size: 22px; font-weight: 700; }
+        .stat-tile .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.03em; }
+        .stat-tile.warn .stat-value { color: #f87171; }
+        @media print {
+            /* body itself (not just #app) carries the dark theme's background/min-height --
+               override both, or the empty space below the printed content stays painted
+               #0a0e17 instead of white. */
+            body { background: white !important; min-height: 0 !important; }
+            /* #app is the entire dark-themed dashboard (sidebar, header, all views) --
+               display:none removes it from layout entirely, not just paints it invisible,
+               so it can't leave a dark body-background box or force a spillover blank page. */
+            body > *:not(#discharge-print-modal) { display: none !important; }
+            #discharge-print-modal * { visibility: hidden; }
+            #discharge-print-preview, #discharge-print-preview * { visibility: visible; }
+            #discharge-print-modal { position: static !important; background: none !important; }
+            #discharge-print-preview { position: absolute; left: 0; top: 0; width: 100%; background: white; }
+        }
     </style>
 </head>
 <body>
@@ -78,16 +96,18 @@
             <button class="active" data-view="dashboard">📊 Dashboard</button>
             <button data-view="patients" id="patients-tab">👥 Patients</button>
             <button data-view="assign" id="assign-tab">📋 Assign</button>
-            <button data-view="tasks" id="tasks-tab">✅ Tasks</button>
+            <button data-view="tasks" id="tasks-nav-btn">✅ Tasks</button>
         </aside>
         <section class="content">
             <div id="alert-banner" class="alert-banner">⚠️ Abnormal vitals detected</div>
             <div id="dashboard-view" class="view active">
                 <h2>Patient Overview</h2>
+                <div id="ward-summary" style="display:none; gap:12px; flex-wrap:wrap; margin:12px 0;"></div>
                 <div id="patient-grid" class="patient-grid"></div>
             </div>
             <div id="patients-view" class="view">
                 <h2>All Patients</h2>
+                <input id="patient-search" type="text" placeholder="🔎 Search by name, ward, or bed..." style="width:100%;max-width:360px;padding:8px 12px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;margin-top:10px;" />
                 <div id="patient-list" style="margin-top:12px;"></div>
                 <button id="show-admit-btn" class="btn-primary" style="margin-top:12px;">➕ Admit Patient</button>
             </div>
@@ -190,13 +210,78 @@
     </div>
 </div>
 
+<!-- Ward Round Modal (Doctor) -->
+<div id="ward-round-modal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:820px;">
+        <div class="modal-header">
+            <h2>🩺 Ward Round – <span id="round-patient-name"></span></h2>
+            <button class="modal-close" onclick="closeModal('ward-round-modal')">&times;</button>
+        </div>
+        <div style="margin-bottom:12px;">
+            <p><strong>Ward:</strong> <span id="round-ward"></span> | <strong>Bed:</strong> <span id="round-bed"></span> | <strong>Day of admission:</strong> <span id="round-day"></span></p>
+        </div>
+        <div style="margin-bottom:16px;">
+            <h3 style="font-size:13px;color:#94a3b8;margin-bottom:6px;text-transform:uppercase;">💊 Currently Active Medications</h3>
+            <div id="round-active-meds" style="font-size:13px;"></div>
+        </div>
+        <div style="margin-bottom:16px;">
+            <label style="font-weight:600;display:block;margin-bottom:4px;">🎤 Speak or type today's round notes</label>
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+                <button id="round-start-btn" class="btn-primary">🎤 Start</button>
+                <button id="round-stop-btn" class="btn-secondary" style="display:none;">⏹ Stop</button>
+                <span id="round-mic-status" style="font-size:12px;color:#94a3b8;">Idle</span>
+            </div>
+            <textarea id="round-transcript" rows="4" placeholder="Speak or type the round conversation..." style="width:100%;padding:8px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;resize:vertical;"></textarea>
+            <div id="round-status" style="font-size:13px;color:#22d3ee;min-height:20px;margin-top:6px;"></div>
+        </div>
+        <div id="round-draft" style="display:none; margin-top:16px; border-top:1px solid #1e293b; padding-top:16px;">
+            <div class="form-group"><label>Chief Complaint / Findings</label><textarea id="round-chief-complaint"></textarea></div>
+            <div class="form-group"><label>HPI / Progress Note</label><textarea id="round-hpi"></textarea></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div class="form-group"><label>Diagnosis</label><input id="round-diagnosis" /></div>
+                <div class="form-group"><label>Differential</label><input id="round-differential" /></div>
+            </div>
+            <div class="form-group">
+                <label>New / Updated Medications Today</label>
+                <div id="round-medications-list"></div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+                    <input id="round-med-drug" placeholder="Drug Name" style="flex:1;min-width:80px;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
+                    <input id="round-med-dose" placeholder="Dose" style="flex:1;min-width:60px;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
+                    <input id="round-med-frequency" placeholder="Frequency" style="flex:1;min-width:60px;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
+                    <select id="round-med-route" style="padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;"><option>Oral</option><option>IV</option><option>IM</option><option>SubQ</option><option>Topical</option></select>
+                    <input id="round-med-duration" placeholder="Duration" style="flex:1;min-width:60px;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
+                    <button id="round-add-med-btn" class="btn-secondary">Add</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Lab Tests</label>
+                <div id="round-lab-list"></div>
+                <div style="display:flex; gap:6px;">
+                    <input id="round-lab-test" placeholder="Test name" style="flex:1;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
+                    <button id="round-add-lab-btn" class="btn-secondary">Add</button>
+                </div>
+            </div>
+            <div class="form-group"><label>Advice / Plan</label><textarea id="round-advice"></textarea></div>
+            <div id="round-interaction-section" style="display:none; margin-top:12px; border-top:1px solid #1e293b; padding-top:12px;">
+                <h3 style="font-size:14px;">⚠️ Drug Interaction Check (full regimen)</h3>
+                <div id="round-interaction-results"></div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeModal('ward-round-modal')">Cancel</button>
+            <button class="btn-primary" id="round-finalize-btn" style="display:none; background:linear-gradient(135deg, #34d399, #059669);">✅ Finalize &amp; Save</button>
+        </div>
+    </div>
+</div>
+
 <script>
 const API_BASE = '/api';
-const accessToken = localStorage.getItem('access_token');
+let accessToken = localStorage.getItem('access_token');
 if (!accessToken) window.location.href = '/index.html';
 
 let currentUser = null;
 let currentPatientId = null;
+let currentPatient = null;
 let consultPatientId = null;
 let extractedVitals = [];
 let extractedLabs = [];
@@ -217,6 +302,7 @@ async function apiRequest(endpoint, options = {}) {
                 const data = await r.json();
                 localStorage.setItem('access_token', data.access_token);
                 localStorage.setItem('refresh_token', data.refresh_token);
+                accessToken = data.access_token;
                 headers['Authorization'] = `Bearer ${data.access_token}`;
                 return fetch(`${API_BASE}${endpoint}`, { ...options, headers });
             }
@@ -255,9 +341,9 @@ function applyRolePermissions() {
     const role = currentUser.role;
     document.getElementById('patients-tab').style.display = (role === 'HeadNurse' || role === 'NursingStation') ? 'block' : 'none';
     document.getElementById('assign-tab').style.display = (role === 'HeadNurse') ? 'block' : 'none';
-    document.getElementById('tasks-tab').style.display = (role === 'HeadNurse' || role === 'Nurse') ? 'block' : 'none';
+    document.getElementById('tasks-nav-btn').style.display = (role === 'HeadNurse' || role === 'Nurse') ? 'block' : 'none';
     const admitBtn = document.getElementById('show-admit-btn');
-    if (admitBtn) admitBtn.style.display = (role === 'NursingStation') ? 'inline-block' : 'none';
+    if (admitBtn) admitBtn.style.display = (role === 'NursingStation' || role === 'HeadNurse') ? 'inline-block' : 'none';
     const taskBtn = document.getElementById('show-task-btn');
     if (taskBtn) taskBtn.style.display = (role === 'HeadNurse') ? 'inline-block' : 'none';
 }
@@ -283,13 +369,43 @@ async function checkOllama() {
 async function loadDashboard() {
     const res = await apiRequest('/ipd/patients');
     if (!res.ok) return;
-    const patients = await res.json();
+    let patients = await res.json();
+
+    // Ward-wide summary + priority sorting only make sense for roles that see the whole
+    // ward roster (HeadNurse/NursingStation/Doctor); a Nurse's list is already just their own
+    // handful of assigned patients, where this would be noise rather than signal.
+    const summaryEl = document.getElementById('ward-summary');
+    if (currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation' || currentUser.role === 'Doctor') {
+        const unassignedCount = patients.filter(p => !p.assigned_nurse).length;
+        const abnormalCount = patients.filter(p => p.abnormal).length;
+        const overdueCount = patients.filter(p => p.overdue_tasks > 0).length;
+        summaryEl.style.display = 'flex';
+        summaryEl.innerHTML = `
+            <div class="stat-tile"><div class="stat-value">${patients.length}</div><div class="stat-label">Patients</div></div>
+            <div class="stat-tile ${unassignedCount ? 'warn' : ''}"><div class="stat-value">${unassignedCount}</div><div class="stat-label">Unassigned</div></div>
+            <div class="stat-tile ${abnormalCount ? 'warn' : ''}"><div class="stat-value">${abnormalCount}</div><div class="stat-label">Abnormal Vitals</div></div>
+            <div class="stat-tile ${overdueCount ? 'warn' : ''}"><div class="stat-value">${overdueCount}</div><div class="stat-label">Overdue Tasks</div></div>
+        `;
+        // Most-urgent-first: abnormal vitals, then overdue tasks, then everyone else -- so a
+        // busy ward's most critical patients surface at the top instead of requiring a scan
+        // of the whole grid.
+        patients = [...patients].sort((a, b) => {
+            if (a.abnormal !== b.abnormal) return a.abnormal ? -1 : 1;
+            const aOverdue = a.overdue_tasks > 0, bOverdue = b.overdue_tasks > 0;
+            if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+            return 0;
+        });
+    } else {
+        summaryEl.style.display = 'none';
+    }
+
     const grid = document.getElementById('patient-grid');
     grid.innerHTML = patients.map(p => `
         <div class="patient-card ${p.abnormal ? 'abnormal' : ''}" onclick="showPatientDetail(${p.id})">
             <h3>${p.name}</h3>
             <div class="meta">${p.age || 'N/A'}y ${p.gender || ''} • ${p.ward} - Bed ${p.bed || ''}</div>
             <div class="meta">${p.diagnosis || 'No diagnosis'}</div>
+            <div class="meta">${p.assigned_nurse ? `👤 ${p.assigned_nurse.email}` : '<span style="color:#f87171;">⚠ Unassigned</span>'}</div>
             ${p.latest_vital ? `
                 <div class="vital">
                     <span>BP: ${p.latest_vital.bp || '--'}</span>
@@ -299,31 +415,52 @@ async function loadDashboard() {
                 </div>
                 <div style="font-size:11px;color:#64748b;">Updated: ${new Date(p.latest_vital.recorded_at).toLocaleString()}</div>
             ` : '<div class="vital">No vitals recorded</div>'}
-            <div class="meta">Pending Tasks: ${p.pending_tasks || 0}</div>
+            <div class="meta">Pending Tasks: ${p.pending_tasks || 0}${p.overdue_tasks ? ` <span style="color:#f87171;">(${p.overdue_tasks} overdue)</span>` : ''}</div>
         </div>
     `).join('');
     const hasAbnormal = patients.some(p => p.abnormal);
-    document.getElementById('alert-banner').style.display = hasAbnormal ? 'block' : 'none';
+    const hasOverdue = patients.some(p => p.overdue_tasks > 0);
+    document.getElementById('alert-banner').style.display = (hasAbnormal || hasOverdue) ? 'block' : 'none';
+    document.getElementById('alert-banner').textContent = hasAbnormal
+        ? '⚠️ Abnormal vitals detected'
+        : '⏰ Overdue tasks need attention';
 }
 
 // ---- PATIENTS LIST (for Head Nurse) ----
+let allLoadedPatients = [];
 async function loadPatients() {
     const res = await apiRequest('/ipd/patients');
     if (!res.ok) return;
-    const patients = await res.json();
+    allLoadedPatients = await res.json();
+    renderPatientList(document.getElementById('patient-search')?.value || '');
+}
+function renderPatientList(filterText) {
     const container = document.getElementById('patient-list');
-    if (!patients || patients.length === 0) {
+    const q = (filterText || '').trim().toLowerCase();
+    const patients = q
+        ? allLoadedPatients.filter(p =>
+            (p.name || '').toLowerCase().includes(q) ||
+            (p.ward || '').toLowerCase().includes(q) ||
+            (p.bed || '').toLowerCase().includes(q))
+        : allLoadedPatients;
+    if (!allLoadedPatients || allLoadedPatients.length === 0) {
         container.innerHTML = '<p style="color:#64748b;">No patients admitted.</p>';
+        return;
+    }
+    if (patients.length === 0) {
+        container.innerHTML = '<p style="color:#64748b;">No patients match your search.</p>';
         return;
     }
     container.innerHTML = patients.map(p => `
         <div class="patient-list-item" onclick="showPatientDetail(${p.id})">
             <div><strong>${p.name}</strong> (${p.age || 'N/A'}y, ${p.gender || 'N/A'}) - ${p.ward} - Bed ${p.bed || ''}</div>
             <div style="color:#94a3b8;">${p.diagnosis || ''}</div>
+            <div style="font-size:12px;color:${p.assigned_nurse ? '#64748b' : '#f87171'};">${p.assigned_nurse ? `Assigned to: ${p.assigned_nurse.email}` : '⚠ Unassigned'}</div>
             <div style="font-size:12px;color:#64748b;">Pending Tasks: ${p.pending_tasks || 0}</div>
         </div>
     `).join('');
 }
+document.getElementById('patient-search').addEventListener('input', (e) => renderPatientList(e.target.value));
 
 // ---- PATIENT DETAIL ----
 async function showPatientDetail(patientId) {
@@ -332,6 +469,7 @@ async function showPatientDetail(patientId) {
     if (!res.ok) return;
     const data = await res.json();
     const patient = data.patient;
+    currentPatient = patient;
     document.getElementById('detail-patient-name').textContent = patient.name;
     const content = document.getElementById('detail-content');
     content.innerHTML = `
@@ -339,13 +477,23 @@ async function showPatientDetail(patientId) {
             <p><strong>Ward:</strong> ${patient.ward} | <strong>Bed:</strong> ${patient.bed}</p>
             <p><strong>Diagnosis:</strong> ${patient.diagnosis || 'N/A'}</p>
             <p><strong>Status:</strong> ${patient.status}</p>
+            <p><strong>Assigned Nurse:</strong> ${patient.assigned_nurse ? patient.assigned_nurse.email : '⚠ Unassigned'}</p>
             <p><strong>Admitted:</strong> ${new Date(patient.admission_date).toLocaleString()}</p>
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
                 ${currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation' ? `
                     <button class="btn-secondary" onclick="editPatient(${patient.id})">✎ Edit</button>
                 ` : ''}
+                ${(currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation') && patient.status === 'Active' ? `
+                    <button class="btn-secondary" style="color:#f87171;border-color:#7f1d1d;" onclick="dischargePatient(${patient.id})">🚪 Discharge</button>
+                ` : ''}
+                ${currentUser.role === 'HeadNurse' && patient.assigned_nurse && patient.status === 'Active' ? `
+                    <button class="btn-secondary" onclick="unassignPatient(${patient.id})">↩️ Unassign Nurse</button>
+                ` : ''}
                 ${currentUser.role === 'Nurse' || currentUser.role === 'HeadNurse' ? `
                     <button class="btn-primary" onclick="openNursingConsult(${patient.id})">📝 Nursing Notes</button>
+                ` : ''}
+                ${currentUser.role === 'Doctor' && patient.status === 'Active' ? `
+                    <button class="btn-primary" onclick="openWardRound(${patient.id})">🩺 Ward Round</button>
                 ` : ''}
             </div>
         </div>
@@ -354,23 +502,26 @@ async function showPatientDetail(patientId) {
             <button class="tab-btn" data-tab="tasks-tab">Tasks</button>
             <button class="tab-btn" data-tab="consultations-tab">Doctor's Notes</button>
             <button class="tab-btn" data-tab="nursing-tab">Nursing Notes</button>
+            <button class="tab-btn" data-tab="discharge-summary-tab">Discharge Summary</button>
         </div>
         <div id="vitals-tab" class="tab-content">
             ${data.vitals.map(v => `
                 <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;font-size:13px;">
                     <span>${new Date(v.recorded_at).toLocaleString()}</span>
-                    <span>BP ${v.bp_systolic}/${v.bp_diastolic} | HR ${v.heart_rate} | Temp ${v.temperature}°C | SpO2 ${v.oxygen_sat}%</span>
+                    <span>BP ${v.bp_systolic ?? '--'}/${v.bp_diastolic ?? '--'} | HR ${v.heart_rate ?? '--'} | Temp ${v.temperature ?? '--'}°C | SpO2 ${v.oxygen_sat ?? '--'}%</span>
+                    <div style="font-size:11px;color:#64748b;">Recorded by: ${v.nurse_email || 'Nurse #' + v.nurse_id}</div>
                     ${v.notes ? `<div style="font-size:12px;color:#94a3b8;">${v.notes}</div>` : ''}
                 </div>
             `).join('') || '<p style="color:#64748b;">No vitals recorded.</p>'}
         </div>
         <div id="tasks-tab" class="tab-content" style="display:none;">
             ${data.tasks.map(t => `
-                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;">
-                    <div><strong>${t.description}</strong> - ${t.status}</div>
+                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;${t.is_overdue ? 'border-left:3px solid #dc2626;' : ''}">
+                    <div>${taskTypeBadge(t)} <strong>${t.description}</strong> - ${t.status} ${t.is_overdue ? '<span style="color:#f87171;">⏰ Overdue</span>' : ''}</div>
                     <div style="font-size:12px;color:#94a3b8;">Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
+                    <div style="font-size:11px;color:#64748b;">Assigned to: ${t.nurse_email || (t.nurse_id ? 'Nurse #' + t.nurse_id : 'Unassigned')}</div>
                     ${t.notes ? `<div style="font-size:12px;color:#94a3b8;">${t.notes}</div>` : ''}
-                    ${currentUser.role === 'Nurse' && t.status !== 'Completed' && t.nurse_id == currentUser.id ? `
+                    ${t.status !== 'Completed' && (currentUser.role === 'HeadNurse' || (currentUser.role === 'Nurse' && t.nurse_id == currentUser.id)) ? `
                         <button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>
                     ` : ''}
                 </div>
@@ -392,11 +543,17 @@ async function showPatientDetail(patientId) {
         <div id="nursing-tab" class="tab-content" style="display:none;">
             ${data.nursing_notes.map(n => `
                 <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;">
-                    <div style="font-size:12px;color:#94a3b8;">${new Date(n.created_at).toLocaleString()} by Nurse ${n.nurse_id}</div>
+                    <div style="font-size:12px;color:#94a3b8;">${new Date(n.created_at).toLocaleString()} by ${n.nurse_email || 'Nurse #' + n.nurse_id}</div>
                     <pre style="font-size:12px;white-space:pre-wrap;margin-top:4px;">${n.notes || ''}</pre>
                     ${n.voice_transcript ? `<details><summary>Voice Transcript</summary><div style="font-size:12px;color:#94a3b8;">${n.voice_transcript}</div></details>` : ''}
                 </div>
             `).join('') || '<p style="color:#64748b;">No nursing notes.</p>'}
+        </div>
+        <div id="discharge-summary-tab" class="tab-content" style="display:none;">
+            ${(currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation' || currentUser.role === 'Doctor') ? `
+                <button class="btn-primary" id="generate-discharge-summary-btn" onclick="generateDischargeSummary(${patient.id})" style="margin-bottom:12px;">🧾 Generate Discharge Summary</button>
+            ` : ''}
+            <div id="discharge-summary-content">Loading...</div>
         </div>
     `;
     content.querySelectorAll('.tab-btn').forEach(btn => {
@@ -408,6 +565,154 @@ async function showPatientDetail(patientId) {
         });
     });
     document.getElementById('patient-detail-modal').style.display = 'flex';
+    loadDischargeSummary(patient.id);
+}
+
+// ---- Discharge Summary ----
+let currentDischargeSummary = null;
+
+function renderDischargeSummary(summary) {
+    currentDischargeSummary = summary;
+    const el = document.getElementById('discharge-summary-content');
+    if (!el) return;
+    if (!summary) {
+        el.innerHTML = '<p style="color:#64748b;">No discharge summary generated yet.</p>';
+        return;
+    }
+    const meds = (summary.medications_at_discharge || [])
+        .map(m => `${m.drugName || ''} ${m.dose || ''} ${m.frequency || ''} ${m.duration || ''}`.trim())
+        .filter(Boolean).join(', ') || 'None';
+    el.innerHTML = `
+        <button class="btn-secondary" onclick="printDischargeSummary()" style="margin-bottom:12px;">🖨️ Print / Save PDF</button>
+        <div style="background:#0f172a;padding:12px;border-radius:6px;font-size:13px;">
+            <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Generated ${new Date(summary.created_at).toLocaleString()}</div>
+            <p><strong>Admission Summary:</strong> ${summary.admission_summary || 'N/A'}</p>
+            <p style="margin-top:8px;"><strong>Hospital Course:</strong> ${summary.hospital_course || 'N/A'}</p>
+            <p style="margin-top:8px;"><strong>Discharge Diagnosis:</strong> ${summary.discharge_diagnosis || 'N/A'}</p>
+            <p style="margin-top:8px;"><strong>Medications at Discharge:</strong> ${meds}</p>
+            <p style="margin-top:8px;"><strong>Follow-up Instructions:</strong> ${summary.follow_up_instructions || 'N/A'}</p>
+            <p style="margin-top:8px;"><strong>Condition at Discharge:</strong> ${summary.condition_at_discharge || 'N/A'}</p>
+        </div>
+    `;
+}
+
+function printDischargeSummary() {
+    const summary = currentDischargeSummary;
+    if (!summary) return;
+    const patientName = document.getElementById('detail-patient-name').textContent;
+    const patient = currentPatient || {};
+    const ageSex = (patient.age ? patient.age + ' yrs' : '') + (patient.age && patient.gender ? ' / ' : '') + (patient.gender || '');
+    const recordNo = `AIV-${new Date().getFullYear()}-${String(100000 + (patient.id || 0)).slice(-6)}`;
+    const admitDate = patient.admission_date ? new Date(patient.admission_date).toISOString().split('T')[0] : 'N/A';
+    const dischargeDate = new Date().toISOString().split('T')[0];
+    const medRows = (summary.medications_at_discharge || [])
+        .map((m, idx) => `<tr><td>${idx + 1}</td><td>${m.drugName || ''}</td><td>${m.dose || ''}</td><td>${m.frequency || ''}</td><td>${m.duration || ''}</td></tr>`)
+        .join('');
+    let modal = document.getElementById('discharge-print-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'discharge-print-modal';
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header"><h2>Discharge Summary</h2><button class="modal-close" onclick="closeModal('discharge-print-modal')">&times;</button></div>
+                <div id="discharge-print-preview" style="background:white;color:black;padding:32px;border-radius:8px;font-family:'Segoe UI',sans-serif;"></div>
+                <div class="modal-footer">
+                    <button onclick="closeModal('discharge-print-modal')" class="btn-secondary">Cancel</button>
+                    <button onclick="window.print()" class="btn-primary">🖨️ Print / Save PDF</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    document.getElementById('discharge-print-preview').innerHTML = `
+        <div style="max-width:700px;margin:0 auto;font-size:11px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
+                <div>
+                    <h2 style="font-size:18px;font-weight:700;margin:0;">${currentUser?.role || 'Clinician'}: ${currentUser?.email || ''}</h2>
+                    <p style="font-size:10px;color:#64748b;margin:2px 0 0;">Ward: ${patient.ward || 'N/A'} &middot; Bed: ${patient.bed || 'N/A'}</p>
+                </div>
+                <div style="text-align:right;">
+                    <p style="font-size:13px;font-weight:700;margin:0;letter-spacing:0.5px;">AIVANA CLINICAL IPD</p>
+                    <p style="font-size:10px;color:#64748b;margin:2px 0 0;">Inpatient Department</p>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;background:#f1f5f9;padding:12px;border-radius:6px;margin-bottom:16px;font-size:10px;">
+                <div><strong>PATIENT</strong><br>${patientName || 'N/A'}</div>
+                <div><strong>AGE/SEX</strong><br>${ageSex || 'N/A'}</div>
+                <div><strong>CASE RECORD NO</strong><br>${recordNo}</div>
+                <div><strong>ADMITTED / DISCHARGED</strong><br>${admitDate} &rarr; ${dischargeDate}</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
+                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Admission Summary</strong>
+                    <p style="font-size:12px;margin:4px 0 0;">${summary.admission_summary || 'N/A'}</p>
+                </div>
+                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
+                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Hospital Course</strong>
+                    <p style="font-size:12px;margin:4px 0 0;">${summary.hospital_course || 'N/A'}</p>
+                </div>
+            </div>
+            <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;margin-bottom:16px;">
+                <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Discharge Diagnosis</strong>
+                <p style="font-size:12px;font-weight:600;margin:4px 0 0;">${summary.discharge_diagnosis || 'N/A'}</p>
+            </div>
+            <div style="margin-bottom:16px;">
+                <div style="font-size:16px;font-weight:700;color:#0d9488;margin-bottom:6px;">Medications at Discharge</div>
+                ${medRows ? `
+                    <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid #e2e8f0;">
+                        <thead style="background:#f1f5f9;"><tr><th>#</th><th>Drug</th><th>Dose</th><th>Frequency</th><th>Duration</th></tr></thead>
+                        <tbody>${medRows}</tbody>
+                    </table>
+                ` : '<p style="color:#94a3b8;font-size:12px;">No medications at discharge.</p>'}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
+                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Follow-up Instructions</strong>
+                    <p style="font-size:12px;margin:4px 0 0;">${summary.follow_up_instructions || 'N/A'}</p>
+                </div>
+                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
+                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Condition at Discharge</strong>
+                    <p style="font-size:12px;margin:4px 0 0;">${summary.condition_at_discharge || 'N/A'}</p>
+                </div>
+            </div>
+            <div style="border-top:1px solid #e2e8f0;padding-top:16px;margin-top:16px;display:flex;justify-content:space-between;font-size:9px;color:#94a3b8;">
+                <span>*Digitally generated via AIVANA Clinical IPD Platform. Generated ${new Date(summary.created_at).toLocaleString()}</span>
+                <div style="text-align:right;">
+                    <div style="border-bottom:1px dashed #94a3b8;width:120px;margin:0 auto 4px;height:30px;"></div>
+                    <strong style="color:#1e293b;">${currentUser?.role || 'Clinician'}: ${currentUser?.email || ''}</strong>
+                </div>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+}
+
+async function loadDischargeSummary(patientId) {
+    const res = await apiRequest(`/ipd/patients/${patientId}/discharge-summary`);
+    if (res.status === 404) {
+        renderDischargeSummary(null);
+        return;
+    }
+    if (res.ok) {
+        renderDischargeSummary(await res.json());
+    }
+}
+
+async function generateDischargeSummary(patientId) {
+    const btn = document.getElementById('generate-discharge-summary-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+    try {
+        const res = await apiRequest(`/ipd/patients/${patientId}/discharge-summary`, { method: 'POST' });
+        if (res.ok) {
+            renderDischargeSummary(await res.json());
+        } else {
+            const err = await res.json();
+            alert(err.detail || 'Failed to generate discharge summary');
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🧾 Generate Discharge Summary'; }
+    }
 }
 
 // ---- Edit Patient ----
@@ -430,6 +735,40 @@ async function editPatient(patientId) {
     } else {
         const err = await res.json();
         alert(err.detail || 'Update failed');
+    }
+}
+
+// ---- Discharge Patient ----
+async function dischargePatient(patientId) {
+    if (!confirm('Discharge this patient? They will be removed from active ward lists and their nurse assignment will be closed.')) return;
+    const res = await apiRequest(`/patients/${patientId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: 'Discharged' })
+    });
+    if (res.ok) {
+        alert('Patient discharged');
+        closeModal('patient-detail-modal');
+        loadDashboard();
+        loadPatients();
+    } else {
+        const err = await res.json();
+        alert(err.detail || 'Discharge failed');
+    }
+}
+
+async function unassignPatient(patientId) {
+    if (!confirm('Unassign the current nurse from this patient? The patient stays admitted but will show as Unassigned until reassigned.')) return;
+    const res = await apiRequest('/ipd/unassign', {
+        method: 'POST',
+        body: JSON.stringify({ patient_id: patientId })
+    });
+    if (res.ok) {
+        loadDashboard();
+        loadPatients();
+        showPatientDetail(patientId);
+    } else {
+        const err = await res.json();
+        alert(err.detail || 'Unassign failed');
     }
 }
 
@@ -598,11 +937,80 @@ function addLabItem() {
 }
 
 // ---- Save Nursing Notes ----
+function parseNursingNoteSections(text) {
+    // The textarea is seeded (and expected to remain, even after edits) in
+    // "Subjective: ...\nObjective: ...\nAssessment: ...\nPlan: ..." form -- split it back
+    // into its four SOAP fields so Save persists exactly what was reviewed/edited instead of
+    // cramming the whole blob into a single field.
+    const labels = ['Subjective', 'Objective', 'Assessment', 'Plan'];
+    const extract = (label, laterLabels) => {
+        const pattern = new RegExp(
+            `${label}:\\s*([\\s\\S]*?)(?=\\n(?:${laterLabels.join('|')}):|$)`, 'i'
+        );
+        const m = text.match(pattern);
+        return m ? m[1].trim() : '';
+    };
+    return {
+        subjective: extract(labels[0], labels.slice(1)),
+        objective: extract(labels[1], labels.slice(2)),
+        assessment: extract(labels[2], labels.slice(3)),
+        plan: extract(labels[3], []),
+    };
+}
+
+// Map the free-text {parameter, value, unit} rows the nurse reviewed into the Vital model's
+// actual structured columns (bp_systolic/bp_diastolic/heart_rate/temperature/oxygen_sat/
+// respiratory_rate), instead of leaving those columns null and burying the reading inside a
+// notes string. Structured columns are what drive the abnormal-vitals alert on the dashboard
+// and the "BP x/y | HR z" summary line -- if they stay null, both silently never work for any
+// vital captured through this voice flow. Anything that doesn't match a known parameter name
+// (e.g. "Pain Score") is preserved verbatim in the notes field so it isn't lost.
+function mapVitalsToStructured(vitalsList) {
+    const structured = {
+        bp_systolic: null, bp_diastolic: null, heart_rate: null,
+        temperature: null, oxygen_sat: null, respiratory_rate: null
+    };
+    const unmapped = [];
+    const num = (s) => {
+        const m = String(s).match(/-?\d+(\.\d+)?/);
+        return m ? parseFloat(m[0]) : null;
+    };
+    for (const v of vitalsList) {
+        const p = (v.parameter || '').trim().toLowerCase();
+        const val = v.value != null ? String(v.value).trim() : '';
+        if (!p || !val) continue;
+        if (p.includes('blood pressure') || p === 'bp') {
+            const parts = val.split('/');
+            const sys = num(parts[0]);
+            const dia = parts.length > 1 ? num(parts[1]) : null;
+            if (sys != null) structured.bp_systolic = Math.round(sys);
+            if (dia != null) structured.bp_diastolic = Math.round(dia);
+            if (sys == null && dia == null) unmapped.push(v);
+        } else if (p.includes('heart rate') || p === 'hr' || p.includes('pulse')) {
+            const n = num(val);
+            if (n != null) structured.heart_rate = Math.round(n); else unmapped.push(v);
+        } else if (p.includes('temp')) {
+            const n = num(val);
+            if (n != null) structured.temperature = n; else unmapped.push(v);
+        } else if (p.includes('spo2') || p.includes('o2 sat') || p.includes('oxygen') || p === 'sao2') {
+            const n = num(val);
+            if (n != null) structured.oxygen_sat = Math.round(n); else unmapped.push(v);
+        } else if (p.includes('respiratory') || p === 'rr' || p.includes('resp rate')) {
+            const n = num(val);
+            if (n != null) structured.respiratory_rate = Math.round(n); else unmapped.push(v);
+        } else {
+            unmapped.push(v);
+        }
+    }
+    const notes = unmapped.map(v => `${v.parameter}: ${v.value}${v.unit ? ' ' + v.unit : ''}`).join('; ');
+    return { ...structured, notes };
+}
+
 document.getElementById('nursing-save-btn').addEventListener('click', async () => {
     const patientId = consultPatientId;
     if (!patientId) { alert('No patient selected'); return; }
     const vitalsToSave = extractedVitals.filter(v => v.parameter.trim() !== '');
-    const noteText = document.getElementById('nursing-note-text').value.trim();
+    let noteText = document.getElementById('nursing-note-text').value.trim();
     if (vitalsToSave.length === 0 && !noteText) {
         alert('Please record at least one vital or a nursing note.');
         return;
@@ -611,31 +1019,35 @@ document.getElementById('nursing-save-btn').addEventListener('click', async () =
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
     try {
-        for (const v of vitalsToSave) {
+        if (vitalsToSave.length > 0) {
+            const structured = mapVitalsToStructured(vitalsToSave);
             await apiRequest('/ipd/vitals', {
                 method: 'POST',
-                body: JSON.stringify({
-                    patient_id: patientId,
-                    bp_systolic: null,
-                    bp_diastolic: null,
-                    heart_rate: null,
-                    temperature: null,
-                    oxygen_sat: null,
-                    respiratory_rate: null,
-                    notes: `Parameter: ${v.parameter}, Value: ${v.value} ${v.unit}`
-                })
+                body: JSON.stringify({ patient_id: patientId, ...structured })
             });
         }
+        // Labs have no dedicated model/endpoint in this system; fold reviewed lab results into
+        // the Objective section so they're preserved on the chart rather than silently dropped
+        // now that the Process step (POST /api/ipd/nurse-consult) no longer persists anything
+        // on its own -- Save is the only place this data gets written.
+        const labsToSave = extractedLabs.filter(l => (l.test || '').trim() !== '');
+        if (labsToSave.length > 0) {
+            const labLines = 'Labs: ' + labsToSave.map(l => `${l.test} ${l.result || ''}`.trim()).join('; ');
+            noteText = noteText ? `${noteText}\n${labLines}` : `Objective: \n${labLines}`;
+        }
         if (noteText) {
+            // Deliberately do NOT send voice_text here: the backend re-runs its own LLM
+            // extraction whenever voice_text is present, silently discarding whatever the
+            // nurse just reviewed/edited in this textarea. Send the reviewed text itself.
+            const sections = parseNursingNoteSections(noteText);
             await apiRequest('/nursing-notes', {
                 method: 'POST',
                 body: JSON.stringify({
                     patient_id: patientId,
-                    voice_text: document.getElementById('nursing-voice-text').value,
-                    subjective: noteText,
-                    objective: '',
-                    assessment: '',
-                    plan: ''
+                    subjective: sections.subjective,
+                    objective: sections.objective,
+                    assessment: sections.assessment,
+                    plan: sections.plan
                 })
             });
         }
@@ -679,19 +1091,30 @@ document.getElementById('admit-submit').addEventListener('click', async () => {
 
 // ---- Assign Patient (Head Nurse only) ----
 async function loadAssignOptions() {
-    const [patientsRes, nursesRes] = await Promise.all([
+    const [patientsRes, nursesRes, workloadRes] = await Promise.all([
         apiRequest('/ipd/patients'),
-        apiRequest('/auth/users?role=Nurse')
+        apiRequest('/auth/users?role=Nurse'),
+        apiRequest('/ipd/nurse-workload')
     ]);
     if (patientsRes.ok) {
         const patients = await patientsRes.json();
         const sel = document.getElementById('assign-patient');
-        sel.innerHTML = patients.map(p => `<option value="${p.id}">${p.name} (${p.ward})</option>`).join('');
+        sel.innerHTML = patients.map(p => `<option value="${p.id}">${p.name} (${p.ward}) — ${p.assigned_nurse ? 'currently: ' + p.assigned_nurse.email : 'Unassigned'}</option>`).join('');
+    }
+    // Workload (active patient count per nurse) so a head nurse can avoid piling more
+    // patients onto an already-stretched nurse -- shown alongside each option, not just email.
+    const workloadByNurseId = {};
+    if (workloadRes.ok) {
+        (await workloadRes.json()).forEach(w => { workloadByNurseId[w.id] = w.patient_count; });
     }
     if (nursesRes.ok) {
         const nurses = await nursesRes.json();
         const sel = document.getElementById('assign-nurse');
-        sel.innerHTML = nurses.map(n => `<option value="${n.id}">${n.email}</option>`).join('');
+        sel.innerHTML = nurses.map(n => {
+            const count = workloadByNurseId[n.id];
+            const load = count !== undefined ? ` (${count} patient${count === 1 ? '' : 's'})` : '';
+            return `<option value="${n.id}">${n.email}${load}</option>`;
+        }).join('');
     }
 }
 document.getElementById('assign-btn').addEventListener('click', async () => {
@@ -704,6 +1127,7 @@ document.getElementById('assign-btn').addEventListener('click', async () => {
     });
     const data = await res.json();
     document.getElementById('assign-result').textContent = res.ok ? '✅ Assigned' : '❌ ' + (data.detail || 'Failed');
+    if (res.ok) loadAssignOptions();  // refresh "currently assigned" labels so a rapid string of reassignments doesn't show stale state
 });
 
 // ---- Tasks ----
@@ -741,29 +1165,31 @@ document.getElementById('task-submit').addEventListener('click', async () => {
         alert(err.detail || 'Failed');
     }
 });
+function taskTypeBadge(t) {
+    const icon = { Medication: '💊', Lab: '🧪', Observation: '👁️', General: '📋' }[t.task_type] || '📋';
+    const sourceColor = t.source === 'Auto' ? '#22d3ee' : '#94a3b8';
+    return `<span title="${t.task_type || 'General'}">${icon}</span> <span style="font-size:10px;color:${sourceColor};border:1px solid ${sourceColor};border-radius:8px;padding:0 6px;">${t.source || 'Manual'}</span>`;
+}
+
 async function loadTasks() {
-    const patientsRes = await apiRequest('/ipd/patients');
-    if (!patientsRes.ok) return;
-    const patients = await patientsRes.json();
-    let allTasks = [];
-    for (const p of patients) {
-        const tRes = await apiRequest(`/ipd/tasks/${p.id}`);
-        if (tRes.ok) {
-            const tasks = await tRes.json();
-            allTasks.push(...tasks.map(t => ({ ...t, patient_name: p.name })));
-        }
-    }
+    // One call for everything this user can see, instead of looping the per-patient
+    // endpoint once per roster entry -- that pattern doesn't scale for a nurse (or head
+    // nurse) with many patients.
+    const res = await apiRequest('/ipd/tasks');
+    if (!res.ok) return;
+    const allTasks = await res.json();
+    allTasks.sort((a, b) => (b.is_overdue === a.is_overdue) ? 0 : (b.is_overdue ? 1 : -1));
     const list = document.getElementById('task-list');
     list.innerHTML = allTasks.map(t => `
-        <div style="background:#111827;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px;">
-            <div><strong>${t.patient_name}</strong> - ${t.description}</div>
+        <div style="background:#111827;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px;${t.is_overdue ? 'border-left:3px solid #dc2626;' : ''}">
+            <div>${taskTypeBadge(t)} <strong>${t.patient_name}</strong> - ${t.description} ${t.is_overdue ? '<span style="color:#f87171;">⏰ Overdue</span>' : ''}</div>
             <div style="font-size:12px;color:#94a3b8;">Status: ${t.status} | Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
             ${t.notes ? `<div style="font-size:12px;color:#94a3b8;">${t.notes}</div>` : ''}
-            ${currentUser.role === 'Nurse' && t.status !== 'Completed' && t.nurse_id == currentUser.id ? `
+            ${t.status !== 'Completed' && (currentUser.role === 'HeadNurse' || (currentUser.role === 'Nurse' && t.nurse_id == currentUser.id)) ? `
                 <button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>
             ` : ''}
         </div>
-    `).join('');
+    `).join('') || '<p style="color:#64748b;">No tasks.</p>';
 }
 async function updateTask(taskId, status) {
     const res = await apiRequest(`/ipd/tasks/${taskId}`, {
@@ -779,6 +1205,284 @@ async function updateTask(taskId, status) {
         alert(err.detail || 'Failed');
     }
 }
+
+// ---- Ward Round (Doctor) ----
+let roundPatientId = null;
+let roundConsultationId = null;
+let roundRecognition = null;
+let roundConsulting = false;
+let roundAccumulatedTranscript = '';
+
+function renderActiveMeds(meds) {
+    const container = document.getElementById('round-active-meds');
+    if (!meds || meds.length === 0) {
+        container.innerHTML = '<div style="color:#64748b;">No active medications on record.</div>';
+        return;
+    }
+    container.innerHTML = meds.map(m => `
+        <div class="vital-item">
+            <span style="flex:1;">${m.drugName || 'Unknown'} - ${m.dose || 'N/A'} - ${m.frequency || 'N/A'} - ${m.route || 'N/A'}</span>
+            <label style="font-size:12px;color:#f87171;display:flex;align-items:center;gap:4px;white-space:nowrap;">
+                <input type="checkbox" data-drug="${(m.drugName || '').replace(/"/g, '&quot;')}" class="round-discontinue-cb"> Discontinue
+            </label>
+        </div>
+    `).join('');
+}
+
+async function openWardRound(patientId) {
+    roundPatientId = patientId;
+    roundConsultationId = null;
+    const res = await apiRequest(`/patients/${patientId}/details`);
+    if (!res.ok) { alert('Could not load patient'); return; }
+    const data = await res.json();
+    const p = data.patient;
+    document.getElementById('round-patient-name').textContent = p.name;
+    document.getElementById('round-ward').textContent = p.ward;
+    document.getElementById('round-bed').textContent = p.bed;
+
+    const medsRes = await apiRequest(`/ipd/patients/${patientId}/active-medications`);
+    if (medsRes.ok) {
+        const medsData = await medsRes.json();
+        renderActiveMeds(medsData.active_medications || []);
+        document.getElementById('round-day').textContent = medsData.admission_day ? `Day ${medsData.admission_day}` : 'N/A';
+    }
+
+    document.getElementById('round-transcript').value = '';
+    document.getElementById('round-status').textContent = '';
+    document.getElementById('round-draft').style.display = 'none';
+    document.getElementById('round-finalize-btn').style.display = 'none';
+    document.getElementById('round-start-btn').style.display = 'inline-block';
+    document.getElementById('round-stop-btn').style.display = 'none';
+    document.getElementById('round-mic-status').textContent = 'Idle';
+    document.getElementById('ward-round-modal').style.display = 'flex';
+}
+
+document.getElementById('round-start-btn').addEventListener('click', () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const transcriptEl = document.getElementById('round-transcript');
+    const statusEl = document.getElementById('round-mic-status');
+    const startBtn = document.getElementById('round-start-btn');
+    const stopBtn = document.getElementById('round-stop-btn');
+    if (!SpeechRecognition) {
+        statusEl.textContent = 'Not supported — type manually';
+        roundConsulting = true;
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        transcriptEl.disabled = false;
+        transcriptEl.focus();
+        return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(() => {
+        roundConsulting = true;
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        transcriptEl.value = '';
+        roundAccumulatedTranscript = '';
+        statusEl.textContent = 'Listening...';
+        roundRecognition = new SpeechRecognition();
+        roundRecognition.continuous = true;
+        roundRecognition.interimResults = true;
+        roundRecognition.lang = 'en-IN';
+        roundRecognition.onresult = (event) => {
+            let final = '', interim = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                if (event.results[i].isFinal) final += event.results[i][0].transcript + ' ';
+                else interim += event.results[i][0].transcript;
+            }
+            if (final) roundAccumulatedTranscript += final;
+            transcriptEl.value = (roundAccumulatedTranscript + ' ' + interim).trim();
+        };
+        roundRecognition.onerror = (event) => {
+            if (event.error !== 'no-speech') statusEl.textContent = 'Error: ' + event.error;
+            if (roundConsulting) setTimeout(() => { try { roundRecognition.start(); } catch(e) {} }, 1000);
+        };
+        roundRecognition.onend = () => {
+            if (roundConsulting) { try { roundRecognition.start(); } catch(e) {} }
+            else statusEl.textContent = 'Idle';
+        };
+        roundRecognition.start();
+    }).catch(() => {
+        statusEl.textContent = 'Mic blocked — type manually';
+        roundConsulting = true;
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        transcriptEl.disabled = false;
+    });
+});
+
+document.getElementById('round-stop-btn').addEventListener('click', () => {
+    roundConsulting = false;
+    document.getElementById('round-stop-btn').style.display = 'none';
+    document.getElementById('round-start-btn').style.display = 'inline-block';
+    if (roundRecognition) { try { roundRecognition.stop(); } catch(e) {} roundRecognition = null; }
+    const text = document.getElementById('round-transcript').value.trim();
+    if (text.length >= 10) {
+        processWardRound(text);
+    } else {
+        document.getElementById('round-status').textContent = '⚠️ Transcript too short (minimum 10 characters).';
+    }
+});
+
+async function processWardRound(transcript) {
+    document.getElementById('round-status').textContent = '🔄 Processing round...';
+    const res = await apiRequest('/ipd/rounds', {
+        method: 'POST',
+        body: JSON.stringify({ patient_id: roundPatientId, transcript })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        document.getElementById('round-status').textContent = '❌ Error: ' + (data.detail || 'Failed');
+        return;
+    }
+    roundConsultationId = data.id;
+    document.getElementById('round-chief-complaint').value = data.chiefComplaint || '';
+    document.getElementById('round-hpi').value = data.hpi || '';
+    document.getElementById('round-diagnosis').value = data.primaryDiagnosis || '';
+    document.getElementById('round-differential').value = data.differentialDiagnosis || '';
+    document.getElementById('round-advice').value = data.advice || '';
+    renderRoundMeds(data.medications || []);
+    renderRoundLabs(data.labTests || []);
+    if (data.active_medications) renderActiveMeds(data.active_medications);
+    if (data.admission_day) document.getElementById('round-day').textContent = `Day ${data.admission_day}`;
+    document.getElementById('round-draft').style.display = 'block';
+    document.getElementById('round-finalize-btn').style.display = 'inline-block';
+    const taskNote = data.tasks_created ? ` (${data.tasks_created} task${data.tasks_created === 1 ? '' : 's'} sent to nursing)` : '';
+    document.getElementById('round-status').textContent = `✅ Round recorded.${taskNote} Review and Finalize & Save.`;
+    renderRoundInteractions(data.interaction_warnings || []);
+}
+
+function renderRoundMeds(meds) {
+    const list = document.getElementById('round-medications-list');
+    list.innerHTML = '';
+    if (!meds || meds.length === 0) {
+        list.innerHTML = '<div class="medication-item"><span style="color:#64748b;">No new medications today.</span></div>';
+        return;
+    }
+    meds.forEach((m, i) => {
+        const div = document.createElement('div');
+        div.className = 'medication-item';
+        div.innerHTML = `<span>${i+1}. ${m.drugName || 'Unknown'} - ${m.dose || 'N/A'} - ${m.frequency || 'N/A'} - ${m.route || 'N/A'} - ${m.duration || 'N/A'}</span>
+            <button onclick="this.parentElement.remove()">✕</button>`;
+        list.appendChild(div);
+    });
+}
+
+function getRoundMedications() {
+    const items = document.querySelectorAll('#round-medications-list .medication-item span');
+    const meds = [];
+    items.forEach(span => {
+        const parts = span.textContent.split(' - ');
+        if (parts.length >= 5) {
+            meds.push({
+                drugName: parts[0].replace(/^\d+\.\s*/, ''),
+                dose: parts[1], frequency: parts[2], route: parts[3], duration: parts[4]
+            });
+        }
+    });
+    return meds;
+}
+
+document.getElementById('round-add-med-btn').addEventListener('click', () => {
+    const drug = document.getElementById('round-med-drug').value.trim();
+    if (!drug) { alert('Enter drug name'); return; }
+    const dose = document.getElementById('round-med-dose').value || 'N/A';
+    const freq = document.getElementById('round-med-frequency').value || 'N/A';
+    const route = document.getElementById('round-med-route').value;
+    const dur = document.getElementById('round-med-duration').value || 'N/A';
+    const list = document.getElementById('round-medications-list');
+    if (list.children.length === 1 && list.children[0].querySelector('span')?.textContent.includes('No new medications')) list.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'medication-item';
+    div.innerHTML = `<span>${list.children.length+1}. ${drug} - ${dose} - ${freq} - ${route} - ${dur}</span><button onclick="this.parentElement.remove()">✕</button>`;
+    list.appendChild(div);
+    ['round-med-drug','round-med-dose','round-med-frequency','round-med-duration'].forEach(id => document.getElementById(id).value = '');
+});
+
+function renderRoundLabs(labs) {
+    const list = document.getElementById('round-lab-list');
+    list.innerHTML = '';
+    if (!labs || labs.length === 0) {
+        list.innerHTML = '<div class="lab-item"><span style="color:#64748b;">No lab tests.</span></div>';
+        return;
+    }
+    labs.forEach(t => {
+        const div = document.createElement('div');
+        div.className = 'lab-item';
+        div.innerHTML = `<span>${t}</span><button onclick="this.parentElement.remove()">✕</button>`;
+        list.appendChild(div);
+    });
+}
+
+function getRoundLabs() {
+    const items = document.querySelectorAll('#round-lab-list .lab-item span');
+    const labs = [];
+    items.forEach(span => {
+        const text = span.textContent.trim();
+        if (text && !text.includes('No lab tests')) labs.push(text);
+    });
+    return labs;
+}
+
+document.getElementById('round-add-lab-btn').addEventListener('click', () => {
+    const test = document.getElementById('round-lab-test').value.trim();
+    if (!test) { alert('Enter test name'); return; }
+    const list = document.getElementById('round-lab-list');
+    if (list.children.length === 1 && list.children[0].querySelector('span')?.textContent.includes('No lab tests')) list.innerHTML = '';
+    const div = document.createElement('div');
+    div.className = 'lab-item';
+    div.innerHTML = `<span>${test}</span><button onclick="this.parentElement.remove()">✕</button>`;
+    list.appendChild(div);
+    document.getElementById('round-lab-test').value = '';
+});
+
+function renderRoundInteractions(interactions) {
+    const container = document.getElementById('round-interaction-results');
+    const section = document.getElementById('round-interaction-section');
+    if (!interactions || interactions.length === 0) {
+        section.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+    section.style.display = 'block';
+    container.innerHTML = interactions.map(i => `
+        <div class="interaction-item ${i.severity ? i.severity.toLowerCase() : ''}" style="background:#1e293b;padding:8px 12px;border-radius:6px;margin-bottom:6px;border-left:4px solid ${i.severity === 'Severe' ? '#dc2626' : i.severity === 'Moderate' ? '#f59e0b' : '#22d3ee'};">
+            <div style="font-weight:bold;">${i.drug_pair || 'Unknown pair'}</div>
+            <div style="font-size:12px;">Severity: ${i.severity || 'Unknown'}</div>
+            <div style="font-size:12px;color:#94a3b8;">Reason: ${i.reason || 'No reason provided'}</div>
+            <div style="font-size:12px;color:#34d399;">Recommendation: ${i.recommendation || 'Consult pharmacist'}</div>
+        </div>
+    `).join('');
+}
+
+document.getElementById('round-finalize-btn').addEventListener('click', async () => {
+    if (!roundConsultationId) return;
+    const discontinued = Array.from(document.querySelectorAll('.round-discontinue-cb:checked'))
+        .map(cb => ({ drugName: cb.dataset.drug, discontinued: true }));
+    const medications = [...getRoundMedications(), ...discontinued];
+    const payload = {
+        chiefComplaint: document.getElementById('round-chief-complaint').value,
+        hpi: document.getElementById('round-hpi').value,
+        primaryDiagnosis: document.getElementById('round-diagnosis').value,
+        differentialDiagnosis: document.getElementById('round-differential').value,
+        advice: document.getElementById('round-advice').value,
+        medications,
+        labTests: getRoundLabs(),
+    };
+    const res = await apiRequest(`/consultations/${roundConsultationId}/finalize`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+        document.getElementById('round-status').textContent = '❌ Error: ' + (data.detail || 'Failed');
+        return;
+    }
+    const taskNote = data.tasks_created ? ` — ${data.tasks_created} task${data.tasks_created === 1 ? '' : 's'} sent to nursing staff.` : '';
+    document.getElementById('round-status').textContent = `✅ Finalized and saved.${taskNote}`;
+    renderRoundInteractions(data.interaction_warnings || []);
+    loadDashboard();
+    if (currentPatientId === roundPatientId) showPatientDetail(roundPatientId);
+});
 
 // ---- Sidebar ----
 document.querySelectorAll('.sidebar button').forEach(b => {
