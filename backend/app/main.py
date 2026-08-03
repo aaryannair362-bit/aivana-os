@@ -57,19 +57,28 @@ app.add_middleware(
 )
 
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend")
+# FileResponse sets no Cache-Control by default, so browsers fall back to heuristic caching --
+# verified live, this let a page (opd.html/ipd.html) served identically for a while keep being
+# read from the browser's cache with no revalidation for an entire deploy cycle, so a pushed
+# frontend change (e.g. the color/font refresh) silently didn't show up for a returning user
+# without a hard refresh, even though the new file was live on the server the whole time.
+# no-cache (not no-store) still lets the browser use a cached copy once it's revalidated via
+# the conditional request FileResponse's own ETag/Last-Modified headers support -- just never
+# silently, without asking the server first.
+NO_CACHE_HEADERS = {"Cache-Control": "no-cache, must-revalidate"}
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
     @app.get("/")
     async def serve_index():
         index_path = os.path.join(frontend_dir, "index.html")
         if os.path.exists(index_path):
-            return FileResponse(index_path)
+            return FileResponse(index_path, headers=NO_CACHE_HEADERS)
         return {"message": "Frontend not found"}
     @app.get("/{filename}.html")
     async def serve_html(filename: str):
         file_path = os.path.join(frontend_dir, f"{filename}.html")
         if os.path.exists(file_path):
-            return FileResponse(file_path)
+            return FileResponse(file_path, headers=NO_CACHE_HEADERS)
         raise HTTPException(status_code=404, detail="Page not found")
 else:
     @app.get("/")
