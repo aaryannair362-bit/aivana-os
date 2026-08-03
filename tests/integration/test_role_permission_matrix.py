@@ -31,6 +31,15 @@ def actors(make_user):
 
 
 @pytest.fixture
+def ward_id(client, actors, auth_headers):
+    resp = client.post(
+        "/api/wards", json={"name": "Matrix Ward", "bed_capacity": 10}, headers=auth_headers(actors["HeadNurse"]),
+    )
+    assert resp.status_code == 200
+    return resp.json()["id"]
+
+
+@pytest.fixture
 def patient_id(client, actors, auth_headers):
     resp = client.post(
         "/api/ipd/patients",
@@ -49,7 +58,7 @@ def patient_id(client, actors, auth_headers):
     return pid
 
 
-def _endpoints(patient_id, actors):
+def _endpoints(patient_id, actors, ward_id):
     nurse_id = actors["Nurse"].id
     target_id = actors["NursingStation"].id
     return [
@@ -95,6 +104,28 @@ def _endpoints(patient_id, actors):
         dict(name="drug_interactions", method="POST", path="/api/drug-interactions",
              body={"medications": [{"drugName": "Aspirin"}, {"drugName": "Warfarin"}]},
              allowed={"Admin", "HeadNurse", "NursingStation", "Nurse", "Doctor"}, ok_status={200}, needs_groq=True),
+        dict(name="list_wards", method="GET", path="/api/wards",
+             body=None, allowed={"HeadNurse", "Admin"}, ok_status={200}),
+        dict(name="create_ward", method="POST", path="/api/wards",
+             body={"name": "Second Matrix Ward", "bed_capacity": 5},
+             allowed={"HeadNurse", "Admin"}, ok_status={200}),
+        dict(name="update_ward", method="PATCH", path=f"/api/wards/{ward_id}",
+             body={"bed_capacity": 12}, allowed={"HeadNurse", "Admin"}, ok_status={200}),
+        dict(name="delete_ward", method="DELETE", path=f"/api/wards/{ward_id}",
+             body=None, allowed={"HeadNurse", "Admin"}, ok_status={200}),
+        dict(name="get_shifts", method="GET", path="/api/ipd/shifts",
+             body=None, allowed={"HeadNurse"}, ok_status={200}),
+        dict(name="set_shift", method="PUT", path="/api/ipd/shifts",
+             body={"nurse_id": nurse_id, "shift_date": "2026-01-05", "shift_type": "Morning"},
+             allowed={"HeadNurse"}, ok_status={200}),
+        dict(name="get_reports", method="GET", path="/api/ipd/reports",
+             body=None, allowed={"HeadNurse"}, ok_status={200}),
+        dict(name="get_dashboard_summary", method="GET", path="/api/ipd/dashboard-summary",
+             body=None, allowed={"HeadNurse"}, ok_status={200}),
+        dict(name="get_alerts", method="GET", path="/api/ipd/alerts",
+             body=None, allowed={"HeadNurse", "NursingStation", "Nurse", "Doctor"}, ok_status={200}),
+        dict(name="get_consultation_analytics", method="GET", path="/api/consultations/analytics",
+             body=None, allowed={"Doctor"}, ok_status={200}),
     ]
 
 
@@ -108,15 +139,18 @@ def _make_cases():
     names = ["create_patient", "assign_patient", "record_vital", "get_vitals", "create_task",
              "get_tasks", "nurse_consult", "create_nursing_note", "update_patient",
              "get_patient_details", "get_ipd_patients", "get_users", "update_user_role",
-             "reset_password", "admin_create_user", "drug_interactions"]
+             "reset_password", "admin_create_user", "drug_interactions",
+             "list_wards", "create_ward", "update_ward", "delete_ward",
+             "get_shifts", "set_shift", "get_reports", "get_dashboard_summary",
+             "get_alerts", "get_consultation_analytics"]
     roles = ["Admin", "HeadNurse", "NursingStation", "Nurse", "Doctor"]
     return [(n, r) for n in names for r in roles]
 
 
 @pytest.mark.parametrize("endpoint_name,role", _make_cases(),
                           ids=[f"{n}-{r}" for n, r in _make_cases()])
-def test_permission_matrix(client, actors, patient_id, auth_headers, monkeypatch, endpoint_name, role):
-    endpoints_by_name = {e["name"]: e for e in _endpoints(patient_id, actors)}
+def test_permission_matrix(client, actors, patient_id, ward_id, auth_headers, monkeypatch, endpoint_name, role):
+    endpoints_by_name = {e["name"]: e for e in _endpoints(patient_id, actors, ward_id)}
     endpoint = endpoints_by_name[endpoint_name]
     if endpoint.get("needs_groq"):
         if endpoint_name == "nurse_consult":
@@ -138,6 +172,8 @@ def test_permission_matrix(client, actors, patient_id, auth_headers, monkeypatch
         resp = client.put(path, json=body, headers=headers)
     elif method == "PATCH":
         resp = client.patch(path, json=body, headers=headers)
+    elif method == "DELETE":
+        resp = client.delete(path, headers=headers)
     else:
         raise AssertionError(f"unsupported method {method}")
 

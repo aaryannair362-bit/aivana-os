@@ -124,18 +124,18 @@ def test_updating_task_notes_without_changing_status(client, head_nurse, nurse, 
     assert task["notes"] == "Patient was asleep, will retry in 30 min"
 
 
-def test_update_task_arbitrary_status_string_accepted_without_validation(client, head_nurse, patient_id, auth_headers):
-    """Documents current behavior: status is a free-text column with no enum/CHECK constraint,
-    so any string is accepted -- not just Pending/InProgress/Completed."""
+def test_update_task_arbitrary_status_string_rejected(client, head_nurse, patient_id, auth_headers):
+    """status is whitelisted to Pending/Completed (matching task_type's existing validation) --
+    an arbitrary string is rejected with 400 and the task's status is left unchanged."""
     resp = client.post("/api/ipd/tasks", json={"patient_id": patient_id, "description": "Weird status test"},
                         headers=auth_headers(head_nurse))
     task_id = resp.json()["id"]
     update = client.patch(f"/api/ipd/tasks/{task_id}", json={"status": "OnHold-AwaitingLabResults"},
                            headers=auth_headers(head_nurse))
-    assert update.status_code == 200
+    assert update.status_code == 400
     tasks = client.get(f"/api/ipd/tasks/{patient_id}", headers=auth_headers(head_nurse)).json()
     task = next(t for t in tasks if t["id"] == task_id)
-    assert task["status"] == "OnHold-AwaitingLabResults"
+    assert task["status"] == "Pending"
 
 
 def test_update_nonexistent_task_returns_404(client, head_nurse, auth_headers):

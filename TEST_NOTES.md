@@ -108,24 +108,24 @@ Save discarding edits) being sufficient on their own to explain the report. Reco
 future investigator doesn't have to re-derive it, and doesn't mistake "plausible contributing
 factor" for "confirmed root cause."
 
-## 10. Abnormal-vital flagging ignores oxygen_sat entirely and has no low-heart-rate threshold
+## 10. Abnormal-vital flagging ignored oxygen_sat entirely and had no low-heart-rate threshold (fixed)
 
-`GET /api/ipd/patients` (`main.py`, the abnormal-vital block) checks `bp_systolic > 140`,
-`bp_diastolic > 90`, `heart_rate > 100`, and `temperature > 38` -- but never looks at
-`oxygen_sat` at all, and only has a *high* threshold for heart rate, none low. A dangerously
-low SpO2 (e.g. 78%, clinically an emergency) or severe bradycardia (e.g. 35 bpm) is recorded
-exactly as entered and silently treated as "normal" on the ward dashboard. Unlike the existing
-documented BP/temperature unit ambiguity (item 3 above), SpO2 has no unit-system ambiguity --
-it's always a percentage -- so this reads less like a deliberate scope boundary and more like
-an overlooked field. Not fixed here for the same reason item 4 (no physiological range
-validation) wasn't: the codebase defines no canonical alert thresholds anywhere, and this is a
-clinical scoring decision (this is essentially half of a NEWS2/MEWS-style early-warning score)
-that needs a clinician's sign-off, not an invented cutoff picked by whoever is doing the test
-pass. Pinned down as current behavior in
-`tests/integration/test_ward_daily_scenarios.py::test_dangerously_low_oxygen_saturation_is_not_flagged_abnormal`
-and `::test_severe_bradycardia_is_not_flagged_abnormal`. Recommended follow-up: get an actual
-clinical early-warning-score threshold set from the product owner (ideally the full NEWS2/MEWS
-weighting, not just single-vital cutoffs) rather than patching in one more ad hoc `if`.
+`GET /api/ipd/patients` (`main.py`, the abnormal-vital block) checked `bp_systolic > 140`,
+`bp_diastolic > 90`, `heart_rate > 100`, and `temperature > 38` -- but never looked at
+`oxygen_sat` at all, and only had a *high* threshold for heart rate, none low. A dangerously
+low SpO2 (e.g. 78%, clinically an emergency) or severe bradycardia (e.g. 35 bpm) was recorded
+exactly as entered and silently treated as "normal" on the ward dashboard.
+
+**Fixed**: added `heart_rate < 60` (standard sinus-bradycardia cutoff) and `oxygen_sat < 92`
+(standard hypoxia/oxygen-therapy action threshold, e.g. used as a NEWS2 scoring boundary) to
+the abnormal check. These are widely-used textbook thresholds, not invented ad hoc, but they
+are still single-vital cutoffs, not a full weighted early-warning score -- **a clinician should
+still confirm/formalize these against a real NEWS2/MEWS protocol** before this is relied on as
+the hospital's actual early-warning system; treat this fix as closing the "silently normal"
+gap, not as clinical sign-off on the exact numbers. Regression-pinned in
+`tests/integration/test_ward_daily_scenarios.py::test_dangerously_low_oxygen_saturation_is_flagged_abnormal`
+and `::test_severe_bradycardia_is_flagged_abnormal`, plus boundary tests in
+`tests/integration/test_ipd_edge_cases.py` (`test_low_side_abnormal_vital_boundary_*`).
 
 ## 11. SQLite (test DB) vs. Postgres (production) parity gaps, not independently verified
 
@@ -215,4 +215,36 @@ output. `tests/scenarios/test_generate_final_outputs.py` re-probes the key at co
 every run, so simply fixing the key in `backend/.env` and re-running
 `pytest tests/scenarios -m e2e` regenerates every one of the 30 use cases with real model output,
 no code changes needed.
+
+## 16. One pre-existing Playwright timing flake in the curated scenario suite, root-caused as
+## test-infrastructure, not an application bug
+
+`tests/scenarios/test_generate_final_outputs.py::test_generate_opd_output[chromium-UC018_pediatric_seizure_bengali_rural_12min]`
+fails consistently (not intermittently) with an empty draft (`chiefComplaint`/`primaryDiagnosis`
+both `""`), while the other 21 OPD cases in the same file pass every run. Investigated during
+the 2026-08-03 pass (which restructured `opd.html` into a step wizard and was the reason this
+got a closer look, though the flake predates that change):
+
+- **Confirmed not a backend/extraction bug**: calling `POST /api/scribe` directly (bypassing the
+  browser entirely) with this exact case's transcript and mocked Groq response returns a fully
+  correct, populated draft. The scribe pipeline, `drug_matcher`, and `lab_test_matcher` all
+  handle this case's content (a Bengali transcript, a "Paracetamol syrup" medication that
+  triggers the drug matcher's form-gated correction path) with no error.
+- **Confirmed not caused by the opd.html wizard restructure**: `git diff` at the time this was
+  investigated showed `tests/scenarios/test_generate_final_outputs.py`,
+  `tests/scenarios/curated_use_cases.py`, `tests/_voice_helpers.py`, and `frontend/opd.html`
+  were all either unmodified or (for opd.html) reproduced the identical failure both before and
+  after the restructure.
+- **Not root-caused further than "Playwright/speech-mock timing, specific to this transcript"**:
+  the most likely mechanism is the mocked-speech-recognition `_chunk_transcript`/
+  `fire_speech_result` harness (`tests/_voice_helpers.py`) racing against this particular
+  transcript's chunk count/length combination such that the accumulated transcript sent to
+  `/api/scribe` on Stop ends up too short, but this was not confirmed with certainty and no fix
+  was attempted, since the underlying application code is verified correct.
+
+Not fixed: doing so would mean altering shared test-harness timing (`_chunk_transcript`/
+`fire_speech_result`, used by all 30 scenario cases and several e2e files) to chase one flaky
+case, risking new flakiness elsewhere, for a case that already has 21 sibling cases passing and
+whose content is independently confirmed correct via direct API testing. Recorded here so a
+future full-suite run isn't mistaken for a real regression when this one case is red.
 

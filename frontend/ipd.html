@@ -65,6 +65,28 @@
         .stat-tile .stat-value { font-size: 22px; font-weight: 700; }
         .stat-tile .stat-label { font-size: 11px; color: #667169; text-transform: uppercase; letter-spacing: 0.03em; }
         .stat-tile.warn .stat-value { color: #C1694F; }
+
+        /* ---- patient detail drawer (repositioned modal, same show/hide logic) ---- */
+        #patient-detail-modal { justify-content: flex-end; background: rgba(28,38,33,0.45); }
+        #patient-detail-modal .modal-content { max-width: 480px; width: 100%; height: 100vh; max-height: 100vh; border-radius: 0; margin: 0; animation: drawer-slide-in 0.18s ease-out; }
+        @keyframes drawer-slide-in { from { transform: translateX(24px); opacity: 0.6; } to { transform: translateX(0); opacity: 1; } }
+        @media (max-width: 600px) { #patient-detail-modal .modal-content { max-width: 100%; } }
+
+        /* ---- alerts ---- */
+        .alert-item { background: #FFFFFF; border: 1px solid #E6E7E2; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; cursor: pointer; }
+        .alert-item:hover { border-color: #2F6F52; }
+        .alert-item.abnormal_vital { border-left: 4px solid #C1694F; }
+        .alert-item.overdue_task { border-left: 4px solid #8A5B22; }
+
+        /* ---- task kanban / list toggle ---- */
+        .view-toggle { display: flex; gap: 6px; margin: 10px 0; }
+        .view-toggle button { padding: 5px 14px; background: #E6E7E2; border: 1px solid #E6E7E2; border-radius: 8px; color: #667169; font-size: 12px; cursor: pointer; }
+        .view-toggle button.active { background: #2F6F52; border-color: #2F6F52; color: white; }
+        .kanban-board { display: flex; gap: 14px; align-items: flex-start; }
+        .kanban-column { flex: 1; min-width: 220px; background: #F3F2EE; border-radius: 10px; padding: 10px; }
+        .kanban-column h4 { font-size: 12px; text-transform: uppercase; color: #667169; margin-bottom: 8px; letter-spacing: 0.03em; }
+        .kanban-card { background: #FFFFFF; border: 1px solid #E6E7E2; border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 12.5px; }
+        .kanban-card.overdue { border-left: 3px solid #C1694F; }
         @media print {
             /* body itself (not just #app) carries the dark theme's background/min-height --
                override both, or the empty space below the printed content stays painted
@@ -95,8 +117,8 @@
     <main class="app-main">
         <aside class="sidebar">
             <button class="active" data-view="dashboard">📊 Dashboard</button>
+            <button data-view="alerts" id="alerts-tab">🔔 Alerts</button>
             <button data-view="patients" id="patients-tab">👥 Patients</button>
-            <button data-view="assign" id="assign-tab">📋 Assign</button>
             <button data-view="tasks" id="tasks-nav-btn">✅ Tasks</button>
         </aside>
         <section class="content">
@@ -106,23 +128,24 @@
                 <div id="ward-summary" style="display:none; gap:12px; flex-wrap:wrap; margin:12px 0;"></div>
                 <div id="patient-grid" class="patient-grid"></div>
             </div>
+            <div id="alerts-view" class="view">
+                <h2>🔔 Alerts</h2>
+                <div id="alerts-list" style="margin-top:12px;"></div>
+            </div>
             <div id="patients-view" class="view">
                 <h2>All Patients</h2>
                 <input id="patient-search" type="text" placeholder="🔎 Search by name, ward, or bed..." style="width:100%;max-width:360px;padding:8px 12px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;margin-top:10px;" />
                 <div id="patient-list" style="margin-top:12px;"></div>
                 <button id="show-admit-btn" class="btn-primary" style="margin-top:12px;">➕ Admit Patient</button>
             </div>
-            <div id="assign-view" class="view">
-                <h2>Assign Patient to Nurse</h2>
-                <div class="form-group"><label>Patient</label><select id="assign-patient"></select></div>
-                <div class="form-group"><label>Nurse</label><select id="assign-nurse"></select></div>
-                <button id="assign-btn" class="btn-primary">Assign</button>
-                <div id="assign-result"></div>
-            </div>
             <div id="tasks-view" class="view">
                 <h2>Tasks</h2>
-                <button id="show-task-btn" class="btn-primary">➕ Create Task</button>
+                <div class="view-toggle">
+                    <button id="task-view-list-btn" class="active">☰ List</button>
+                    <button id="task-view-kanban-btn">▤ Kanban</button>
+                </div>
                 <div id="task-list" style="margin-top:12px;"></div>
+                <div id="task-kanban" class="kanban-board" style="display:none; margin-top:12px;"></div>
             </div>
         </section>
     </main>
@@ -146,22 +169,10 @@
         <div class="form-group"><label>Name</label><input id="admit-name" placeholder="Patient name" /></div>
         <div class="form-group"><label>Age</label><input id="admit-age" type="number" placeholder="Age" /></div>
         <div class="form-group"><label>Gender</label><select id="admit-gender"><option>Male</option><option>Female</option><option>Other</option></select></div>
-        <div class="form-group"><label>Ward</label><input id="admit-ward" placeholder="Ward name" /></div>
+        <div class="form-group" id="admit-ward-group"><label>Ward</label><input id="admit-ward" placeholder="Ward name" /></div>
         <div class="form-group"><label>Bed</label><input id="admit-bed" placeholder="Bed number" /></div>
         <div class="form-group"><label>Diagnosis</label><textarea id="admit-diagnosis" placeholder="Primary diagnosis"></textarea></div>
         <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('admit-modal')">Cancel</button><button class="btn-primary" id="admit-submit">Admit</button></div>
-    </div>
-</div>
-
-<!-- Task Modal -->
-<div id="task-modal" class="modal" style="display:none;">
-    <div class="modal-content">
-        <div class="modal-header"><h2>Create Task</h2><button class="modal-close" onclick="closeModal('task-modal')">&times;</button></div>
-        <div class="form-group"><label>Patient</label><select id="task-patient"></select></div>
-        <div class="form-group"><label>Assigned Nurse (optional)</label><select id="task-nurse"><option value="">Unassigned</option></select></div>
-        <div class="form-group"><label>Description</label><textarea id="task-desc" placeholder="Task description"></textarea></div>
-        <div class="form-group"><label>Due Date</label><input id="task-due" type="datetime-local" /></div>
-        <div class="modal-footer"><button class="btn-secondary" onclick="closeModal('task-modal')">Cancel</button><button class="btn-primary" id="task-submit">Create</button></div>
     </div>
 </div>
 
@@ -275,9 +286,8 @@
     </div>
 </div>
 
+<script src="/static/js/ipd-shared.js"></script>
 <script>
-const API_BASE = '/api';
-let accessToken = localStorage.getItem('access_token');
 if (!accessToken) window.location.href = '/index.html';
 
 let currentUser = null;
@@ -287,32 +297,6 @@ let consultPatientId = null;
 let extractedVitals = [];
 let extractedLabs = [];
 
-async function apiRequest(endpoint, options = {}) {
-    const headers = { 'Content-Type': 'application/json', ...options.headers };
-    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-    const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
-    if (res.status === 401) {
-        const refresh = localStorage.getItem('refresh_token');
-        if (refresh) {
-            const r = await fetch(`${API_BASE}/auth/refresh`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refresh })
-            });
-            if (r.ok) {
-                const data = await r.json();
-                localStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('refresh_token', data.refresh_token);
-                accessToken = data.access_token;
-                headers['Authorization'] = `Bearer ${data.access_token}`;
-                return fetch(`${API_BASE}${endpoint}`, { ...options, headers });
-            }
-        }
-        window.location.href = '/index.html';
-    }
-    return res;
-}
-
 function showView(id) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.getElementById(id + '-view').classList.add('active');
@@ -320,13 +304,14 @@ function showView(id) {
     document.querySelector(`.sidebar button[data-view="${id}"]`)?.classList.add('active');
 }
 
-function closeModal(id) { document.getElementById(id).style.display = 'none'; }
-
 async function loadUser() {
     const res = await apiRequest('/auth/me');
     if (res.ok) {
         const data = await res.json();
         currentUser = data.user;
+        // HeadNurse has its own dedicated page (frontend/headnurse.html) -- this page now
+        // serves Nurse and NursingStation only.
+        if (currentUser.role === 'HeadNurse') { window.location.href = '/headnurse.html'; return; }
         document.getElementById('user-email').textContent = currentUser.email;
         document.getElementById('user-role').textContent = currentUser.role;
         checkOllama();
@@ -340,13 +325,10 @@ async function loadUser() {
 
 function applyRolePermissions() {
     const role = currentUser.role;
-    document.getElementById('patients-tab').style.display = (role === 'HeadNurse' || role === 'NursingStation') ? 'block' : 'none';
-    document.getElementById('assign-tab').style.display = (role === 'HeadNurse') ? 'block' : 'none';
-    document.getElementById('tasks-nav-btn').style.display = (role === 'HeadNurse' || role === 'Nurse') ? 'block' : 'none';
+    document.getElementById('patients-tab').style.display = (role === 'NursingStation') ? 'block' : 'none';
+    document.getElementById('tasks-nav-btn').style.display = (role === 'Nurse') ? 'block' : 'none';
     const admitBtn = document.getElementById('show-admit-btn');
-    if (admitBtn) admitBtn.style.display = (role === 'NursingStation' || role === 'HeadNurse') ? 'inline-block' : 'none';
-    const taskBtn = document.getElementById('show-task-btn');
-    if (taskBtn) taskBtn.style.display = (role === 'HeadNurse') ? 'inline-block' : 'none';
+    if (admitBtn) admitBtn.style.display = (role === 'NursingStation') ? 'inline-block' : 'none';
 }
 
 async function checkOllama() {
@@ -373,10 +355,11 @@ async function loadDashboard() {
     let patients = await res.json();
 
     // Ward-wide summary + priority sorting only make sense for roles that see the whole
-    // ward roster (HeadNurse/NursingStation/Doctor); a Nurse's list is already just their own
-    // handful of assigned patients, where this would be noise rather than signal.
+    // ward roster (NursingStation/Doctor); a Nurse's list is already just their own handful of
+    // assigned patients, where this would be noise rather than signal. HeadNurse has its own
+    // ward-wide dashboard on frontend/headnurse.html.
     const summaryEl = document.getElementById('ward-summary');
-    if (currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation' || currentUser.role === 'Doctor') {
+    if (currentUser.role === 'NursingStation' || currentUser.role === 'Doctor') {
         const unassignedCount = patients.filter(p => !p.assigned_nurse).length;
         const abnormalCount = patients.filter(p => p.abnormal).length;
         const overdueCount = patients.filter(p => p.overdue_tasks > 0).length;
@@ -466,31 +449,28 @@ document.getElementById('patient-search').addEventListener('input', (e) => rende
 // ---- PATIENT DETAIL ----
 async function showPatientDetail(patientId) {
     currentPatientId = patientId;
-    const res = await apiRequest(`/patients/${patientId}/details`);
+    const [res, medsRes] = await Promise.all([
+        apiRequest(`/patients/${patientId}/details`),
+        apiRequest(`/ipd/patients/${patientId}/active-medications`)
+    ]);
     if (!res.ok) return;
     const data = await res.json();
+    const activeMedsData = medsRes.ok ? await medsRes.json() : { active_medications: [], admission_day: null };
     const patient = data.patient;
     currentPatient = patient;
     document.getElementById('detail-patient-name').textContent = patient.name;
+    const admittedDays = Math.max(0, Math.floor((Date.now() - new Date(patient.admission_date).getTime()) / 86400000));
     const content = document.getElementById('detail-content');
     content.innerHTML = `
         <div style="margin-bottom:12px;">
-            <p><strong>Ward:</strong> ${patient.ward} | <strong>Bed:</strong> ${patient.bed}</p>
-            <p><strong>Diagnosis:</strong> ${patient.diagnosis || 'N/A'}</p>
-            <p><strong>Status:</strong> ${patient.status}</p>
-            <p><strong>Assigned Nurse:</strong> ${patient.assigned_nurse ? patient.assigned_nurse.email : '⚠ Unassigned'}</p>
-            <p><strong>Admitted:</strong> ${new Date(patient.admission_date).toLocaleString()}</p>
-            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
-                ${currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation' ? `
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                ${currentUser.role === 'NursingStation' ? `
                     <button class="btn-secondary" onclick="editPatient(${patient.id})">✎ Edit</button>
                 ` : ''}
-                ${(currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation') && patient.status === 'Active' ? `
+                ${currentUser.role === 'NursingStation' && patient.status === 'Active' ? `
                     <button class="btn-secondary" style="color:#C1694F;border-color:#C1694F;" onclick="dischargePatient(${patient.id})">🚪 Discharge</button>
                 ` : ''}
-                ${currentUser.role === 'HeadNurse' && patient.assigned_nurse && patient.status === 'Active' ? `
-                    <button class="btn-secondary" onclick="unassignPatient(${patient.id})">↩️ Unassign Nurse</button>
-                ` : ''}
-                ${currentUser.role === 'Nurse' || currentUser.role === 'HeadNurse' ? `
+                ${currentUser.role === 'Nurse' ? `
                     <button class="btn-primary" onclick="openNursingConsult(${patient.id})">📝 Nursing Notes</button>
                 ` : ''}
                 ${currentUser.role === 'Doctor' && patient.status === 'Active' ? `
@@ -499,13 +479,21 @@ async function showPatientDetail(patientId) {
             </div>
         </div>
         <div class="tab-bar">
-            <button class="tab-btn active" data-tab="vitals-tab">Vitals</button>
+            <button class="tab-btn active" data-tab="overview-tab">Overview</button>
+            <button class="tab-btn" data-tab="vitals-tab">Vitals</button>
+            <button class="tab-btn" data-tab="medication-tab">Medication</button>
             <button class="tab-btn" data-tab="tasks-tab">Tasks</button>
-            <button class="tab-btn" data-tab="consultations-tab">Doctor's Notes</button>
             <button class="tab-btn" data-tab="nursing-tab">Nursing Notes</button>
             <button class="tab-btn" data-tab="discharge-summary-tab">Discharge Summary</button>
         </div>
-        <div id="vitals-tab" class="tab-content">
+        <div id="overview-tab" class="tab-content">
+            <p><strong>Ward:</strong> ${patient.ward} | <strong>Bed:</strong> ${patient.bed}</p>
+            <p><strong>Diagnosis:</strong> ${patient.diagnosis || 'N/A'}</p>
+            <p><strong>Status:</strong> ${patient.status}</p>
+            <p><strong>Assigned Nurse:</strong> ${patient.assigned_nurse ? patient.assigned_nurse.email : '⚠ Unassigned'}</p>
+            <p><strong>Admitted:</strong> ${new Date(patient.admission_date).toLocaleString()} (${admittedDays} day${admittedDays === 1 ? '' : 's'} ago)</p>
+        </div>
+        <div id="vitals-tab" class="tab-content" style="display:none;">
             ${data.vitals.map(v => `
                 <div style="background:#F3F2EE;padding:8px;border-radius:6px;margin-bottom:6px;font-size:13px;">
                     <span>${new Date(v.recorded_at).toLocaleString()}</span>
@@ -522,13 +510,20 @@ async function showPatientDetail(patientId) {
                     <div style="font-size:12px;color:#667169;">Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
                     <div style="font-size:11px;color:#93998F;">Assigned to: ${t.nurse_email || (t.nurse_id ? 'Nurse #' + t.nurse_id : 'Unassigned')}</div>
                     ${t.notes ? `<div style="font-size:12px;color:#667169;">${t.notes}</div>` : ''}
-                    ${t.status !== 'Completed' && (currentUser.role === 'HeadNurse' || (currentUser.role === 'Nurse' && t.nurse_id == currentUser.id)) ? `
+                    ${t.status !== 'Completed' && currentUser.role === 'Nurse' && t.nurse_id == currentUser.id ? `
                         <button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>
                     ` : ''}
                 </div>
             `).join('') || '<p style="color:#93998F;">No tasks.</p>'}
         </div>
-        <div id="consultations-tab" class="tab-content" style="display:none;">
+        <div id="medication-tab" class="tab-content" style="display:none;">
+            <h3 style="font-size:13px;color:#667169;margin-bottom:6px;text-transform:uppercase;">💊 Currently Active${activeMedsData.admission_day ? ` (Day ${activeMedsData.admission_day})` : ''}</h3>
+            <div style="margin-bottom:16px;">
+                ${(activeMedsData.active_medications || []).map(m => `
+                    <div style="background:#F3F2EE;padding:6px 10px;border-radius:6px;margin-bottom:4px;font-size:13px;">${m.drugName || 'Unknown'} - ${m.dose || 'N/A'} - ${m.frequency || 'N/A'} - ${m.route || 'N/A'}</div>
+                `).join('') || '<p style="color:#93998F;">No active medications on record.</p>'}
+            </div>
+            <h3 style="font-size:13px;color:#667169;margin-bottom:6px;text-transform:uppercase;">📋 Consultation History</h3>
             ${data.consultations.map(c => `
                 <div style="background:#F3F2EE;padding:8px;border-radius:6px;margin-bottom:6px;">
                     <div><strong>${c.case_id}</strong> - ${new Date(c.created_at).toLocaleString()}</div>
@@ -539,7 +534,7 @@ async function showPatientDetail(patientId) {
                     <div><strong>Advice:</strong> ${c.advice || 'N/A'}</div>
                     <details><summary>Full Transcript</summary><pre style="font-size:12px;white-space:pre-wrap;">${c.raw_transcript || ''}</pre></details>
                 </div>
-            `).join('') || '<p style="color:#93998F;">No doctor\'s notes.</p>'}
+            `).join('') || '<p style="color:#93998F;">No consultation history.</p>'}
         </div>
         <div id="nursing-tab" class="tab-content" style="display:none;">
             ${data.nursing_notes.map(n => `
@@ -551,7 +546,7 @@ async function showPatientDetail(patientId) {
             `).join('') || '<p style="color:#93998F;">No nursing notes.</p>'}
         </div>
         <div id="discharge-summary-tab" class="tab-content" style="display:none;">
-            ${(currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation' || currentUser.role === 'Doctor') ? `
+            ${(currentUser.role === 'NursingStation' || currentUser.role === 'Doctor') ? `
                 <button class="btn-primary" id="generate-discharge-summary-btn" onclick="generateDischargeSummary(${patient.id})" style="margin-bottom:12px;">🧾 Generate Discharge Summary</button>
             ` : ''}
             <div id="discharge-summary-content">Loading...</div>
@@ -754,22 +749,6 @@ async function dischargePatient(patientId) {
     } else {
         const err = await res.json();
         alert(err.detail || 'Discharge failed');
-    }
-}
-
-async function unassignPatient(patientId) {
-    if (!confirm('Unassign the current nurse from this patient? The patient stays admitted but will show as Unassigned until reassigned.')) return;
-    const res = await apiRequest('/ipd/unassign', {
-        method: 'POST',
-        body: JSON.stringify({ patient_id: patientId })
-    });
-    if (res.ok) {
-        loadDashboard();
-        loadPatients();
-        showPatientDetail(patientId);
-    } else {
-        const err = await res.json();
-        alert(err.detail || 'Unassign failed');
     }
 }
 
@@ -1065,9 +1044,38 @@ document.getElementById('nursing-save-btn').addEventListener('click', async () =
     }
 });
 
-// ---- Admit Patient (Nursing Station only) ----
-document.getElementById('show-admit-btn').addEventListener('click', () => document.getElementById('admit-modal').style.display = 'flex');
-document.getElementById('admit-submit').addEventListener('click', async () => {
+// ---- Admit Patient (Nursing Station / Head Nurse) ----
+document.getElementById('show-admit-btn').addEventListener('click', async () => {
+    document.getElementById('admit-modal').style.display = 'flex';
+    await setupAdmitWardField();
+});
+
+// If the org has configured Ward rows (GET /api/wards -- HeadNurse/Admin only, so a
+// NursingStation admitter falls back to the plain freeform input below), show a dropdown
+// with live occupancy and disable wards already at capacity instead of just an inert text
+// field. Orgs with no Ward rows configured keep admitting via freeform text exactly as before.
+async function setupAdmitWardField() {
+    const group = document.getElementById('admit-ward-group');
+    try {
+        const res = await apiRequest('/wards');
+        if (res.ok) {
+            const wards = await res.json();
+            if (wards.length > 0) {
+                group.innerHTML = `<label>Ward</label>
+                    <select id="admit-ward">
+                        ${wards.map(w => {
+                            const full = w.occupied >= w.bed_capacity;
+                            return `<option value="${w.name}" ${full ? 'disabled' : ''}>${w.name} (${w.occupied}/${w.bed_capacity}${full ? ' - FULL' : ''})</option>`;
+                        }).join('')}
+                    </select>`;
+                return;
+            }
+        }
+    } catch(e) { /* fall through to freeform input below */ }
+    group.innerHTML = `<label>Ward</label><input id="admit-ward" placeholder="Ward name" />`;
+}
+
+async function submitAdmitPatient(confirmDuplicate) {
     const name = document.getElementById('admit-name').value;
     const age = parseInt(document.getElementById('admit-age').value);
     const gender = document.getElementById('admit-gender').value;
@@ -1077,100 +1085,32 @@ document.getElementById('admit-submit').addEventListener('click', async () => {
     if (!name || !ward) { alert('Name and Ward required'); return; }
     const res = await apiRequest('/ipd/patients', {
         method: 'POST',
-        body: JSON.stringify({ name, age, gender, ward, bed, diagnosis })
+        body: JSON.stringify({ name, age, gender, ward, bed, diagnosis, confirm_duplicate: !!confirmDuplicate })
     });
     if (res.ok) {
         closeModal('admit-modal');
         alert('Patient admitted');
         loadDashboard();
         loadPatients();
-    } else {
-        const err = await res.json();
-        alert(err.detail || 'Failed');
+        return;
     }
-});
-
-// ---- Assign Patient (Head Nurse only) ----
-async function loadAssignOptions() {
-    const [patientsRes, nursesRes, workloadRes] = await Promise.all([
-        apiRequest('/ipd/patients'),
-        apiRequest('/auth/users?role=Nurse'),
-        apiRequest('/ipd/nurse-workload')
-    ]);
-    if (patientsRes.ok) {
-        const patients = await patientsRes.json();
-        const sel = document.getElementById('assign-patient');
-        sel.innerHTML = patients.map(p => `<option value="${p.id}">${p.name} (${p.ward}) — ${p.assigned_nurse ? 'currently: ' + p.assigned_nurse.email : 'Unassigned'}</option>`).join('');
+    const err = await res.json();
+    if (res.status === 409 && !confirmDuplicate) {
+        if (confirm(`${err.detail}\n\nAdmit anyway as a different patient?`)) {
+            await submitAdmitPatient(true);
+        }
+        return;
     }
-    // Workload (active patient count per nurse) so a head nurse can avoid piling more
-    // patients onto an already-stretched nurse -- shown alongside each option, not just email.
-    const workloadByNurseId = {};
-    if (workloadRes.ok) {
-        (await workloadRes.json()).forEach(w => { workloadByNurseId[w.id] = w.patient_count; });
-    }
-    if (nursesRes.ok) {
-        const nurses = await nursesRes.json();
-        const sel = document.getElementById('assign-nurse');
-        sel.innerHTML = nurses.map(n => {
-            const count = workloadByNurseId[n.id];
-            const load = count !== undefined ? ` (${count} patient${count === 1 ? '' : 's'})` : '';
-            return `<option value="${n.id}">${n.email}${load}</option>`;
-        }).join('');
-    }
+    alert(err.detail || 'Failed');
 }
-document.getElementById('assign-btn').addEventListener('click', async () => {
-    const patient_id = document.getElementById('assign-patient').value;
-    const nurse_id = document.getElementById('assign-nurse').value;
-    if (!patient_id || !nurse_id) { alert('Select patient and nurse'); return; }
-    const res = await apiRequest('/ipd/assign', {
-        method: 'POST',
-        body: JSON.stringify({ patient_id, nurse_id })
-    });
-    const data = await res.json();
-    document.getElementById('assign-result').textContent = res.ok ? '✅ Assigned' : '❌ ' + (data.detail || 'Failed');
-    if (res.ok) loadAssignOptions();  // refresh "currently assigned" labels so a rapid string of reassignments doesn't show stale state
-});
+document.getElementById('admit-submit').addEventListener('click', () => submitAdmitPatient(false));
 
 // ---- Tasks ----
-document.getElementById('show-task-btn').addEventListener('click', () => document.getElementById('task-modal').style.display = 'flex');
-async function loadTaskOptions() {
-    const res = await apiRequest('/ipd/patients');
-    if (res.ok) {
-        const patients = await res.json();
-        const sel = document.getElementById('task-patient');
-        sel.innerHTML = patients.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-    }
-    const nursesRes = await apiRequest('/auth/users?role=Nurse');
-    if (nursesRes.ok) {
-        const nurses = await nursesRes.json();
-        const sel = document.getElementById('task-nurse');
-        sel.innerHTML = `<option value="">Unassigned</option>` + nurses.map(n => `<option value="${n.id}">${n.email}</option>`).join('');
-    }
-}
-document.getElementById('task-submit').addEventListener('click', async () => {
-    const patient_id = document.getElementById('task-patient').value;
-    const nurse_id = document.getElementById('task-nurse').value;
-    const description = document.getElementById('task-desc').value;
-    const due_date = document.getElementById('task-due').value;
-    if (!patient_id || !description) { alert('Patient and description required'); return; }
-    const res = await apiRequest('/ipd/tasks', {
-        method: 'POST',
-        body: JSON.stringify({ patient_id, nurse_id: nurse_id || null, description, due_date })
-    });
-    if (res.ok) {
-        closeModal('task-modal');
-        alert('Task created');
-        loadTasks();
-    } else {
-        const err = await res.json();
-        alert(err.detail || 'Failed');
-    }
-});
-function taskTypeBadge(t) {
-    const icon = { Medication: '💊', Lab: '🧪', Observation: '👁️', General: '📋' }[t.task_type] || '📋';
-    const sourceColor = t.source === 'Auto' ? '#2F6F52' : '#667169';
-    return `<span title="${t.task_type || 'General'}">${icon}</span> <span style="font-size:10px;color:${sourceColor};border:1px solid ${sourceColor};border-radius:8px;padding:0 6px;">${t.source || 'Manual'}</span>`;
-}
+// Task creation is a HeadNurse-only action that now lives exclusively in
+// frontend/headnurse.html -- this page (Nurse/NursingStation) only ever viewed tasks.
+
+let lastLoadedTasks = [];
+let taskViewMode = 'list';
 
 async function loadTasks() {
     // One call for everything this user can see, instead of looping the per-patient
@@ -1178,20 +1118,67 @@ async function loadTasks() {
     // nurse) with many patients.
     const res = await apiRequest('/ipd/tasks');
     if (!res.ok) return;
-    const allTasks = await res.json();
-    allTasks.sort((a, b) => (b.is_overdue === a.is_overdue) ? 0 : (b.is_overdue ? 1 : -1));
+    lastLoadedTasks = await res.json();
+    lastLoadedTasks.sort((a, b) => (b.is_overdue === a.is_overdue) ? 0 : (b.is_overdue ? 1 : -1));
+    renderTasks();
+}
+
+function canCompleteTask(t) {
+    return t.status !== 'Completed' && currentUser.role === 'Nurse' && t.nurse_id == currentUser.id;
+}
+
+function renderTasks() {
+    if (taskViewMode === 'kanban') renderTasksKanban(); else renderTasksList();
+}
+
+function renderTasksList() {
+    document.getElementById('task-list').style.display = 'block';
+    document.getElementById('task-kanban').style.display = 'none';
     const list = document.getElementById('task-list');
-    list.innerHTML = allTasks.map(t => `
+    list.innerHTML = lastLoadedTasks.map(t => `
         <div style="background:#FFFFFF;border:1px solid #E6E7E2;border-radius:8px;padding:12px;margin-bottom:8px;${t.is_overdue ? 'border-left:3px solid #C1694F;' : ''}">
             <div>${taskTypeBadge(t)} <strong>${t.patient_name}</strong> - ${t.description} ${t.is_overdue ? '<span style="color:#C1694F;">⏰ Overdue</span>' : ''}</div>
             <div style="font-size:12px;color:#667169;">Status: ${t.status} | Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
             ${t.notes ? `<div style="font-size:12px;color:#667169;">${t.notes}</div>` : ''}
-            ${t.status !== 'Completed' && (currentUser.role === 'HeadNurse' || (currentUser.role === 'Nurse' && t.nurse_id == currentUser.id)) ? `
-                <button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>
-            ` : ''}
+            ${canCompleteTask(t) ? `<button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>` : ''}
         </div>
     `).join('') || '<p style="color:#93998F;">No tasks.</p>';
 }
+
+// 2 real columns (Pending/Completed) -- "Overdue" is shown as a visual attribute of a Pending
+// card via the already-computed is_overdue flag, rather than inventing a third status this
+// system's task lifecycle doesn't actually have.
+function renderTasksKanban() {
+    document.getElementById('task-list').style.display = 'none';
+    document.getElementById('task-kanban').style.display = 'flex';
+    const pending = lastLoadedTasks.filter(t => t.status !== 'Completed');
+    const completed = lastLoadedTasks.filter(t => t.status === 'Completed');
+    const cardHtml = (t) => `
+        <div class="kanban-card ${t.is_overdue ? 'overdue' : ''}">
+            <div>${taskTypeBadge(t)} <strong>${t.patient_name}</strong></div>
+            <div>${t.description}</div>
+            <div style="color:#667169;font-size:11px;margin-top:4px;">Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}${t.is_overdue ? ' — ⏰ Overdue' : ''}</div>
+            ${canCompleteTask(t) ? `<button class="btn-secondary" style="margin-top:6px;" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>` : ''}
+        </div>
+    `;
+    document.getElementById('task-kanban').innerHTML = `
+        <div class="kanban-column"><h4>Pending (${pending.length})</h4>${pending.map(cardHtml).join('') || '<p style="color:#93998F;font-size:12px;">None</p>'}</div>
+        <div class="kanban-column"><h4>Completed (${completed.length})</h4>${completed.map(cardHtml).join('') || '<p style="color:#93998F;font-size:12px;">None</p>'}</div>
+    `;
+}
+
+document.getElementById('task-view-list-btn').addEventListener('click', () => {
+    taskViewMode = 'list';
+    document.getElementById('task-view-list-btn').classList.add('active');
+    document.getElementById('task-view-kanban-btn').classList.remove('active');
+    renderTasks();
+});
+document.getElementById('task-view-kanban-btn').addEventListener('click', () => {
+    taskViewMode = 'kanban';
+    document.getElementById('task-view-kanban-btn').classList.add('active');
+    document.getElementById('task-view-list-btn').classList.remove('active');
+    renderTasks();
+});
 async function updateTask(taskId, status) {
     const res = await apiRequest(`/ipd/tasks/${taskId}`, {
         method: 'PATCH',
@@ -1491,11 +1478,33 @@ document.querySelectorAll('.sidebar button').forEach(b => {
         const view = b.dataset.view;
         showView(view);
         if (view === 'dashboard') loadDashboard();
+        else if (view === 'alerts') loadAlerts();
         else if (view === 'patients') loadPatients();
-        else if (view === 'assign') loadAssignOptions();
-        else if (view === 'tasks') { loadTaskOptions(); loadTasks(); }
+        else if (view === 'tasks') loadTasks();
     });
 });
+
+// ---- Alerts ----
+async function loadAlerts() {
+    const res = await apiRequest('/ipd/alerts?limit=50');
+    if (!res.ok) return;
+    const data = await res.json();
+    const list = document.getElementById('alerts-list');
+    if (!data.alerts || data.alerts.length === 0) {
+        list.innerHTML = '<p style="color:#93998F;">No active alerts.</p>';
+        return;
+    }
+    list.innerHTML = data.alerts.map(a => `
+        <div class="alert-item ${a.type}" onclick="showPatientDetail(${a.patient_id})">
+            <div>
+                <strong>${a.type === 'abnormal_vital' ? '⚠️ Abnormal Vital' : '⏰ Overdue Task'}</strong> — ${a.patient_name}
+                <span style="color:#93998F;">(${a.ward}${a.bed ? ' · Bed ' + a.bed : ''})</span>
+                <div style="color:#667169;font-size:13px;margin-top:2px;">${a.detail}</div>
+            </div>
+            <div style="font-size:11px;color:#93998F;white-space:nowrap;">${a.occurred_at ? new Date(a.occurred_at).toLocaleString() : ''}</div>
+        </div>
+    `).join('');
+}
 
 // ---- Logout ----
 document.getElementById('logout-btn').addEventListener('click', () => {

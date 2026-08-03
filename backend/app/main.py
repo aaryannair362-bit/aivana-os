@@ -1,5 +1,6 @@
 import csv
 import json
+import logging
 import re
 import uuid
 import time
@@ -11,15 +12,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker, Session
 import os
 from .config import settings
-from .models import Base, User, Organization, Consultation, PasswordHistory, Patient, NurseAssignment, Vital, Task, NursingNote, DischargeSummary
+from .models import (
+    Base, User, Organization, Consultation, PasswordHistory, Patient, NurseAssignment, Vital,
+    Task, NursingNote, DischargeSummary, Ward, NurseShift,
+    Drug, DrugBatch, DispensingRecord, ControlledDrugRegisterEntry,
+)
 from .auth import (
     get_current_user, get_password_hash, verify_password,
     validate_password_complexity, create_access_token, create_refresh_token,
-    decode_token, log_audit, is_admin, is_head_nurse, is_nursing_station, is_nurse
+    decode_token, log_audit, is_admin, is_head_nurse, is_nursing_station, is_nurse, is_pharmacist
 )
 from .scribe import scribe
 from . import drug_matcher
@@ -29,6 +34,8 @@ from .tasks_engine import (
     generate_tasks_from_consultation, get_active_medications,
     compute_admission_day, check_drug_interactions,
 )
+
+logger = logging.getLogger(__name__)
 
 engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -42,6 +49,26 @@ def get_db():
     finally:
         db.close()
 
+# Simple in-memory per-IP sliding-window rate limiter for auth endpoints. Single-process only
+# (this app deploys as one long-lived Render process with no Docker/CI/IaC in the repo, see
+# ARCHITECTURE_NOTES.md) -- a multi-instance deployment would need a shared store (e.g. Redis)
+# instead of this dict. RATE_LIMIT_ENABLED=false in tests (tests/conftest.py, tests/scale/runner.py).
+_rate_limit_hits: dict = defaultdict(list)
+
+def _enforce_rate_limit(request: Request, bucket: str, limit: int, window_seconds: int = 60):
+    if not settings.RATE_LIMIT_ENABLED:
+        return
+    ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
+    now = time.time()
+    key = (bucket, ip)
+    cutoff = now - window_seconds
+    hits = [t for t in _rate_limit_hits.get(key, []) if t >= cutoff]
+    if len(hits) >= limit:
+        _rate_limit_hits[key] = hits
+        raise HTTPException(429, "Too many requests, please try again later")
+    hits.append(now)
+    _rate_limit_hits[key] = hits
+
 app = FastAPI(title="AIVANA Hospital System")
 
 @app.exception_handler(json.JSONDecodeError)
@@ -50,8 +77,12 @@ async def json_decode_error_handler(request: Request, exc: json.JSONDecodeError)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    # Auth is a bearer token read from localStorage, never a cookie, so credentialed CORS
+    # (allow_credentials=True) is never needed -- and allow_origins=["*"] + credentials=True
+    # is an invalid combination browsers reject anyway. Origins are configurable via
+    # ALLOWED_ORIGINS since this app has no version-controlled deploy config (see ARCHITECTURE_NOTES.md).
+    allow_origins=[o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -134,7 +165,7 @@ def create_default_user():
             db.add(history)
             db.commit()
     except Exception as e:
-        print(f"Error creating default user: {e}")
+        logger.error("Error creating default user: %s", e)
     finally:
         db.close()
 
@@ -145,6 +176,7 @@ def startup():
 @app.post("/api/auth/register")
 async def register(request: Request, db: Session = Depends(get_db)):
     try:
+        _enforce_rate_limit(request, "register", limit=10, window_seconds=60)
         body = await request.json()
         email = body.get("email")
         password = body.get("password")
@@ -182,12 +214,13 @@ async def register(request: Request, db: Session = Depends(get_db)):
     except json.JSONDecodeError:
         raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
-        print(f"Registration error: {e}")
+        logger.error("Registration error: %s", e)
         raise HTTPException(500, "Internal server error")
 
 @app.post("/api/auth/login")
 async def login(request: Request, db: Session = Depends(get_db)):
     try:
+        _enforce_rate_limit(request, "login", limit=20, window_seconds=60)
         body = await request.json()
         email = body.get("email")
         password = body.get("password")
@@ -235,12 +268,13 @@ async def login(request: Request, db: Session = Depends(get_db)):
     except json.JSONDecodeError:
         raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
-        print(f"Login error: {e}")
+        logger.error("Login error: %s", e)
         raise HTTPException(500, "Internal server error")
 
 @app.post("/api/auth/refresh")
 async def refresh(request: Request):
     try:
+        _enforce_rate_limit(request, "refresh", limit=30, window_seconds=60)
         body = await request.json()
         refresh_token = body.get("refresh_token")
         if not refresh_token:
@@ -263,7 +297,7 @@ async def refresh(request: Request):
     except json.JSONDecodeError:
         raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
-        print(f"Refresh error: {e}")
+        logger.error("Refresh error: %s", e)
         raise HTTPException(500, "Internal server error")
 
 @app.get("/api/auth/me")
@@ -447,8 +481,11 @@ async def scribe_transcript(request: Request, current_user: dict = Depends(get_c
     except json.JSONDecodeError:
         raise HTTPException(400, "Request body must be valid JSON")
     except Exception as e:
-        print(f"Scribe error: {e}")
-        raise HTTPException(500, f"Error: {str(e)}")
+        # Don't echo str(e) back to the client (main.py's other handlers already follow this
+        # pattern) -- an exception raised while processing a transcript can easily embed
+        # PHI-derived content, and this response goes straight to the caller, not just a log.
+        logger.error("Scribe error: %s", e)
+        raise HTTPException(500, "Internal server error")
 
 @app.post("/api/test-scribe")
 async def test_scribe(request: Request):
@@ -502,14 +539,80 @@ async def translate_prescription(request: Request, current_user: dict = Depends(
     except Exception as e:
         raise HTTPException(500, str(e))
 
+MAX_CONSULTATIONS_LIMIT = 200
+
 @app.get("/api/consultations")
-def get_consultations(limit: int = 50, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    cons = db.query(Consultation).filter(Consultation.user_id == current_user.get("id")).order_by(Consultation.created_at.desc()).limit(limit).all()
-    return {"consultations": [
+def get_consultations(
+    limit: int = 50, offset: int = 0, search: Optional[str] = None,
+    current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    limit = max(1, min(limit, MAX_CONSULTATIONS_LIMIT))
+    query = db.query(Consultation).filter(Consultation.user_id == current_user.get("id"))
+    if search and search.strip():
+        # Portable case-insensitive substring match (sqlite has no ILIKE) -- matches the
+        # search-by-patient-name behavior in the reference OPD History view.
+        query = query.filter(func.lower(Consultation.patient_name).like(f"%{search.strip().lower()}%"))
+    total = query.count()
+    cons = query.order_by(Consultation.created_at.desc()).offset(offset).limit(limit).all()
+    return {"total": total, "consultations": [
         {"id": c.id, "case_id": c.case_id, "created_at": c.created_at.isoformat(),
-         "chief_complaint": c.chief_complaint, "primary_diagnosis": c.primary_diagnosis,
+         "patient_name": c.patient_name, "chief_complaint": c.chief_complaint,
+         "primary_diagnosis": c.primary_diagnosis,
          "medications_count": len(c.medications or []), "gemini_latency": c.gemini_latency,
-         "total_tokens": c.total_tokens, "patient_id": c.patient_id} for c in cons]}
+         "total_tokens": c.total_tokens, "patient_id": c.patient_id,
+         "finalized": c.finalized_at is not None} for c in cons]}
+
+@app.get("/api/consultations/analytics")
+def get_consultation_analytics(days: int = 30, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Real per-doctor operational metrics (consultation volume, AI latency, token usage) over a
+    trailing window -- computed from Consultation columns already populated by every real
+    POST /api/scribe call, nothing fabricated. Deliberately no "success rate": a failed Groq call
+    never commits a Consultation row today (see scribe.py), so that figure isn't derivable from
+    what's actually persisted. Deliberately no model/provider name in the response -- callers
+    that want AI availability use the existing GET /api/health (groq_available only).
+
+    NOTE: this route MUST be registered before GET /api/consultations/{consultation_id} --
+    FastAPI matches routes in registration order, and {consultation_id}: int would otherwise
+    greedily match the literal path segment "analytics" first, failing type coercion with a
+    422 instead of ever reaching this handler's real 403/200 logic (caught live during testing).
+    """
+    if not is_doctor(current_user):
+        raise HTTPException(403, "Only doctors can view consultation analytics")
+    days = max(1, min(days, 90))
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = db.query(Consultation).filter(
+        Consultation.user_id == current_user["id"],
+        Consultation.created_at >= since,
+    ).all()
+
+    per_day = defaultdict(lambda: {"count": 0, "latency_sum": 0.0, "latency_n": 0, "tokens_sum": 0, "tokens_n": 0})
+    for c in rows:
+        bucket = per_day[c.created_at.date().isoformat()]
+        bucket["count"] += 1
+        if c.gemini_latency is not None:
+            bucket["latency_sum"] += c.gemini_latency
+            bucket["latency_n"] += 1
+        if c.total_tokens is not None:
+            bucket["tokens_sum"] += c.total_tokens
+            bucket["tokens_n"] += 1
+
+    days_sorted = sorted(per_day.items())
+    latencies = [c.gemini_latency for c in rows if c.gemini_latency is not None]
+    tokens = [c.total_tokens for c in rows if c.total_tokens is not None]
+
+    return {
+        "period_days": days,
+        "total_consultations": len(rows),
+        "avg_latency": round(sum(latencies) / len(latencies), 3) if latencies else None,
+        "avg_tokens": round(sum(tokens) / len(tokens), 1) if tokens else None,
+        "consultations_per_day": [{"date": d, "count": b["count"]} for d, b in days_sorted],
+        "latency_trend": [
+            {"date": d, "avg_latency": round(b["latency_sum"] / b["latency_n"], 3) if b["latency_n"] else None}
+            for d, b in days_sorted
+        ],
+        "token_usage_trend": [{"date": d, "total_tokens": b["tokens_sum"]} for d, b in days_sorted],
+    }
 
 @app.get("/api/consultations/{consultation_id}")
 def get_consultation(consultation_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -524,7 +627,7 @@ def get_consultation(consultation_id: int, current_user: dict = Depends(get_curr
         "raw_transcript": c.raw_transcript, "created_at": c.created_at.isoformat(),
         "gemini_latency": c.gemini_latency, "total_tokens": c.total_tokens,
         "patient_id": c.patient_id, "visit_type": c.visit_type, "admission_day": c.admission_day,
-        "interaction_warnings": c.interaction_warnings
+        "interaction_warnings": c.interaction_warnings, "finalized": c.finalized_at is not None
     }
 
 @app.patch("/api/consultations/{consultation_id}/finalize")
@@ -564,6 +667,8 @@ async def finalize_consultation(
         consultation.medications = data["medications"]
     if "labTests" in data:
         consultation.lab_tests = data["labTests"]
+    if not consultation.finalized_at:  # first finalize only -- re-finalizing after an edit keeps the original timestamp
+        consultation.finalized_at = datetime.utcnow()
     db.commit()
     db.refresh(consultation)
 
@@ -989,10 +1094,12 @@ async def create_ipd_round(
     result["active_medications"] = active_meds
     return result
 
-@app.get("/api/ipd/patients")
-def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def _resolve_ipd_patients_for_role(current_user: dict, db: Session) -> list:
+    """The role-based patient-visibility rule GET /api/ipd/patients and GET /api/ipd/alerts
+    both need identically: HeadNurse/NursingStation/Doctor see the org-wide active roster, a
+    Nurse sees only their own actively-assigned patients. Raises 403 for any other role."""
     if is_head_nurse(current_user) or is_nursing_station(current_user) or is_doctor(current_user):
-        patients = db.query(Patient).filter(
+        return db.query(Patient).filter(
             Patient.status == "Active",
             Patient.organization_id == current_user.get("organization_id")
         ).all()
@@ -1002,7 +1109,7 @@ def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session
             NurseAssignment.status == "Active"
         ).all()
         patient_ids = [a.patient_id for a in assignments]
-        patients = db.query(Patient).filter(
+        return db.query(Patient).filter(
             Patient.id.in_(patient_ids),
             Patient.organization_id == current_user.get("organization_id"),
             Patient.status == "Active"
@@ -1010,13 +1117,15 @@ def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session
     else:
         raise HTTPException(403, "Permission denied")
 
-    # Batched instead of N+1: this used to run 6 separate queries PER PATIENT (latest vital,
-    # pending-task count, overdue-task count, active assignment, nurse lookup, has-notes
-    # check) -- verified live during a large-scale test run, at ~220 active patients in one
-    # org this endpoint (called on every ipd.html page load) got slow enough to blow past a
-    # 45-second page-load timeout. A real hospital ward with a sizeable active census would
-    # hit the exact same wall. Every one of these is now one query for the whole roster,
-    # regardless of how many patients are on it.
+
+def _build_ipd_roster(db: Session, patients: list) -> list:
+    """Batched instead of N+1: this used to run 6 separate queries PER PATIENT (latest vital,
+    pending-task count, overdue-task count, active assignment, nurse lookup, has-notes
+    check) -- verified live during a large-scale test run, at ~220 active patients in one
+    org this endpoint (called on every ipd.html page load) got slow enough to blow past a
+    45-second page-load timeout. A real hospital ward with a sizeable active census would
+    hit the exact same wall. Every one of these is now one query for the whole roster,
+    regardless of how many patients are on it."""
     patient_ids = [p.id for p in patients]
     if not patient_ids:
         return []
@@ -1059,8 +1168,9 @@ def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session
         if latest_vital:
             if (latest_vital.bp_systolic and latest_vital.bp_systolic > 140) or \
                (latest_vital.bp_diastolic and latest_vital.bp_diastolic > 90) or \
-               (latest_vital.heart_rate and latest_vital.heart_rate > 100) or \
-               (latest_vital.temperature and latest_vital.temperature > 38):
+               (latest_vital.heart_rate and (latest_vital.heart_rate > 100 or latest_vital.heart_rate < 60)) or \
+               (latest_vital.temperature and latest_vital.temperature > 38) or \
+               (latest_vital.oxygen_sat is not None and latest_vital.oxygen_sat < 92):
                 abnormal = True
         result.append({
             "id": p.id,
@@ -1086,6 +1196,148 @@ def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session
         })
     return result
 
+@app.get("/api/ipd/patients")
+def get_ipd_patients(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    patients = _resolve_ipd_patients_for_role(current_user, db)
+    return _build_ipd_roster(db, patients)
+
+MAX_ALERTS_LIMIT = 200
+
+@app.get("/api/ipd/alerts")
+def get_ipd_alerts(
+    limit: int = 50, offset: int = 0,
+    current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """
+    Flattens the exact same roster GET /api/ipd/patients already computes -- one alert per
+    abnormal-vitals patient, one per overdue task -- into a single paginated, most-recent-first
+    feed. Reuses _resolve_ipd_patients_for_role/_build_ipd_roster rather than re-deriving
+    "abnormal"/"overdue" with separate logic, so the two endpoints can never silently disagree.
+    """
+    limit = max(1, min(limit, MAX_ALERTS_LIMIT))
+    patients = _resolve_ipd_patients_for_role(current_user, db)
+    roster = _build_ipd_roster(db, patients)
+
+    alerts = []
+    for row in roster:
+        if row["abnormal"] and row["latest_vital"]:
+            v = row["latest_vital"]
+            alerts.append({
+                "type": "abnormal_vital", "patient_id": row["id"], "patient_name": row["name"],
+                "ward": row["ward"], "bed": row["bed"],
+                "detail": f"BP {v['bp']} | HR {v['heart_rate']} | Temp {v['temperature']} | SpO2 {v['oxygen_sat']}",
+                "occurred_at": v["recorded_at"],
+            })
+
+    patient_ids = [p.id for p in patients]
+    if patient_ids:
+        now = datetime.utcnow()
+        overdue_tasks = db.query(Task).filter(
+            Task.patient_id.in_(patient_ids), Task.status != "Completed", Task.due_date.isnot(None), Task.due_date < now
+        ).all()
+        patients_by_id = {p.id: p for p in patients}
+        for t in overdue_tasks:
+            patient = patients_by_id.get(t.patient_id)
+            if not patient:
+                continue
+            alerts.append({
+                "type": "overdue_task", "patient_id": patient.id, "patient_name": patient.name,
+                "ward": patient.ward, "bed": patient.bed,
+                "detail": t.description, "occurred_at": t.due_date.isoformat(),
+            })
+
+    alerts.sort(key=lambda a: a["occurred_at"] or "", reverse=True)
+    total = len(alerts)
+    return {"total": total, "alerts": alerts[offset:offset + limit]}
+
+def _ward_occupancy(db: Session, organization_id: int, ward_name: str) -> int:
+    """Live COUNT of Active patients whose free-text Patient.ward matches (case-insensitively)
+    -- see the Ward model's docstring for why this isn't a stored/cached number or an FK."""
+    return db.query(Patient).filter(
+        Patient.organization_id == organization_id,
+        Patient.status == "Active",
+        func.lower(Patient.ward) == ward_name.strip().lower(),
+    ).count()
+
+def _require_ward_manager(current_user: dict):
+    if not (is_head_nurse(current_user) or is_admin(current_user)):
+        raise HTTPException(403, "Only head nurse or admin can manage ward configuration")
+
+@app.get("/api/wards")
+def list_wards(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_ward_manager(current_user)
+    org_id = current_user.get("organization_id")
+    wards = db.query(Ward).filter(Ward.organization_id == org_id).order_by(Ward.name).all()
+    return [
+        {"id": w.id, "name": w.name, "bed_capacity": w.bed_capacity,
+         "occupied": _ward_occupancy(db, org_id, w.name)}
+        for w in wards
+    ]
+
+@app.post("/api/wards")
+async def create_ward(request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_ward_manager(current_user)
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    bed_capacity = body.get("bed_capacity")
+    if not name:
+        raise HTTPException(400, "name is required")
+    if not isinstance(bed_capacity, int) or isinstance(bed_capacity, bool) or bed_capacity <= 0:
+        raise HTTPException(400, "bed_capacity must be a positive integer")
+    org_id = current_user.get("organization_id")
+    existing = db.query(Ward).filter(Ward.organization_id == org_id).all()
+    if any(w.name.strip().lower() == name.lower() for w in existing):
+        raise HTTPException(400, "A ward with this name already exists")
+    ward = Ward(organization_id=org_id, name=name, bed_capacity=bed_capacity, created_by=current_user["id"])
+    db.add(ward)
+    db.commit()
+    db.refresh(ward)
+    log_audit(db, current_user["id"], current_user["email"], org_id, "create_ward", f"wards/{ward.id}", "Success")
+    return {"id": ward.id, "name": ward.name, "bed_capacity": ward.bed_capacity, "occupied": 0}
+
+@app.patch("/api/wards/{ward_id}")
+async def update_ward(ward_id: int, request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_ward_manager(current_user)
+    ward = db.query(Ward).filter(Ward.id == ward_id, Ward.organization_id == current_user.get("organization_id")).first()
+    if not ward:
+        raise HTTPException(404, "Ward not found")
+    body = await request.json()
+    if "bed_capacity" in body:
+        bed_capacity = body["bed_capacity"]
+        if not isinstance(bed_capacity, int) or isinstance(bed_capacity, bool) or bed_capacity <= 0:
+            raise HTTPException(400, "bed_capacity must be a positive integer")
+        ward.bed_capacity = bed_capacity
+    if "name" in body:
+        new_name = (body["name"] or "").strip()
+        if not new_name:
+            raise HTTPException(400, "name cannot be blank")
+        others = db.query(Ward).filter(Ward.organization_id == ward.organization_id, Ward.id != ward.id).all()
+        if any(w.name.strip().lower() == new_name.lower() for w in others):
+            raise HTTPException(400, "A ward with this name already exists")
+        # Renaming orphans any existing Patient.ward string match against the old name until
+        # those patients are re-admitted/edited -- acceptable, ward renames are rare and
+        # Patient.ward is already a freeform string elsewhere in this codebase.
+        ward.name = new_name
+    db.commit()
+    log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
+              "update_ward", f"wards/{ward_id}", "Success")
+    return {"message": "Ward updated"}
+
+@app.delete("/api/wards/{ward_id}")
+def delete_ward(ward_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_ward_manager(current_user)
+    ward = db.query(Ward).filter(Ward.id == ward_id, Ward.organization_id == current_user.get("organization_id")).first()
+    if not ward:
+        raise HTTPException(404, "Ward not found")
+    occupied = _ward_occupancy(db, ward.organization_id, ward.name)
+    if occupied > 0:
+        raise HTTPException(400, f"Cannot delete ward with {occupied} active patient(s) still admitted")
+    db.delete(ward)
+    db.commit()
+    log_audit(db, current_user["id"], current_user["email"], current_user.get("organization_id"),
+              "delete_ward", f"wards/{ward_id}", "Success")
+    return {"message": "Ward deleted"}
+
 @app.post("/api/ipd/patients")
 async def create_ipd_patient(request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     if not (is_head_nurse(current_user) or is_nursing_station(current_user)):
@@ -1093,8 +1345,45 @@ async def create_ipd_patient(request: Request, current_user: dict = Depends(get_
     data = await request.json()
     name = data.get("name")
     ward = data.get("ward")
+    bed = data.get("bed")
+    age = data.get("age")
+    confirm_duplicate = bool(data.get("confirm_duplicate"))
     if not name or not ward:
         raise HTTPException(400, "name and ward are required")
+    org_id = current_user.get("organization_id")
+
+    if age is not None:
+        if not isinstance(age, int) or isinstance(age, bool) or not (0 <= age <= 130):
+            raise HTTPException(400, "age must be a number between 0 and 130 (0 for newborns under 1 year)")
+
+    if not confirm_duplicate:
+        dup = db.query(Patient).filter(
+            Patient.organization_id == org_id,
+            Patient.status == "Active",
+            func.lower(Patient.name) == name.strip().lower(),
+        ).first()
+        if dup:
+            raise HTTPException(409, f"A patient named '{name}' is already admitted (bed {dup.bed or '?'}, {dup.ward}). "
+                                      f"Resubmit with confirm_duplicate=true if this is a different patient.")
+
+    matching_ward = db.query(Ward).filter(
+        Ward.organization_id == org_id, func.lower(Ward.name) == ward.strip().lower(),
+    ).first()
+    if matching_ward:
+        occupied = _ward_occupancy(db, org_id, ward)
+        if occupied >= matching_ward.bed_capacity:
+            raise HTTPException(400, f"{matching_ward.name} is at full capacity ({occupied}/{matching_ward.bed_capacity} beds occupied)")
+
+    if bed:
+        bed_conflict = db.query(Patient).filter(
+            Patient.organization_id == org_id,
+            Patient.status == "Active",
+            func.lower(Patient.ward) == ward.strip().lower(),
+            func.lower(Patient.bed) == str(bed).strip().lower(),
+        ).first()
+        if bed_conflict:
+            raise HTTPException(400, f"Bed '{bed}' in {ward} is already occupied by {bed_conflict.name}")
+
     patient = Patient(
         name=name,
         age=data.get("age"),
@@ -1188,6 +1477,170 @@ def nurse_workload(current_user: dict = Depends(get_current_user), db: Session =
         ).count()
         result.append({"id": n.id, "email": n.email, "status": n.status, "patient_count": count})
     return result
+
+SHIFT_TYPES = ("Morning", "Evening", "Night", "Off")
+
+@app.get("/api/ipd/shifts")
+def get_nurse_shifts(week_start: Optional[str] = None, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Returns every org Nurse (including those with zero NurseShift rows, defaulted to "Off") x 7
+    days starting week_start (defaults to the most recent Monday) -- so the calendar grid always
+    has a full week to render even before a head nurse has set anything.
+    """
+    if not is_head_nurse(current_user):
+        raise HTTPException(403, "Only head nurse can view shift schedules")
+    if week_start:
+        try:
+            start = datetime.strptime(week_start, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(400, "week_start must be YYYY-MM-DD")
+    else:
+        today = datetime.utcnow().date()
+        start = today - timedelta(days=today.weekday())
+    week_dates = [start + timedelta(days=i) for i in range(7)]
+
+    org_id = current_user.get("organization_id")
+    nurses = db.query(User).filter(User.role == "Nurse", User.organization_id == org_id).order_by(User.email).all()
+    shifts = db.query(NurseShift).filter(
+        NurseShift.organization_id == org_id,
+        NurseShift.shift_date >= week_dates[0],
+        NurseShift.shift_date <= week_dates[-1],
+    ).all()
+    shift_by_key = {(s.nurse_id, s.shift_date): s.shift_type for s in shifts}
+
+    result = []
+    for n in nurses:
+        days = [
+            {"date": d.isoformat(), "shift_type": shift_by_key.get((n.id, d), "Off")}
+            for d in week_dates
+        ]
+        result.append({"nurse_id": n.id, "email": n.email, "days": days})
+    return {"week_start": week_dates[0].isoformat(), "week_end": week_dates[-1].isoformat(), "nurses": result}
+
+@app.put("/api/ipd/shifts")
+async def set_nurse_shift(request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Upserts one (nurse_id, shift_date) row -- editable, unlike the reference mockup's read-only
+    hardcoded schedule, since a head nurse needs to actually set shifts."""
+    if not is_head_nurse(current_user):
+        raise HTTPException(403, "Only head nurse can set shift schedules")
+    data = await request.json()
+    nurse_id = data.get("nurse_id")
+    shift_date_str = data.get("shift_date")
+    shift_type = data.get("shift_type")
+    if not nurse_id or not shift_date_str or not shift_type:
+        raise HTTPException(400, "nurse_id, shift_date and shift_type are required")
+    if shift_type not in SHIFT_TYPES:
+        raise HTTPException(400, f"shift_type must be one of {list(SHIFT_TYPES)}")
+    try:
+        shift_date = datetime.strptime(shift_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, "shift_date must be YYYY-MM-DD")
+
+    org_id = current_user.get("organization_id")
+    nurse = db.query(User).filter(User.id == nurse_id, User.role == "Nurse", User.organization_id == org_id).first()
+    if not nurse:
+        raise HTTPException(404, "Nurse not found in your organization")
+
+    shift = db.query(NurseShift).filter(NurseShift.nurse_id == nurse_id, NurseShift.shift_date == shift_date).first()
+    if shift:
+        shift.shift_type = shift_type
+    else:
+        shift = NurseShift(organization_id=org_id, nurse_id=nurse_id, shift_date=shift_date,
+                            shift_type=shift_type, created_by=current_user["id"])
+        db.add(shift)
+    db.commit()
+    log_audit(db, current_user["id"], current_user["email"], org_id,
+              "set_nurse_shift", f"nurse_shifts/{nurse_id}/{shift_date.isoformat()}", "Success")
+    return {"nurse_id": nurse_id, "shift_date": shift_date.isoformat(), "shift_type": shift_type}
+
+@app.get("/api/ipd/reports")
+def ipd_reports(days: int = 7, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Head-nurse oversight report: task-completion-per-day, patients-by-ward, and diagnosis
+    distribution -- all computed from real Patient/Task rows already in the system, NOT the
+    reference mockup's 5 fixed invented diagnosis categories (Patient.diagnosis is free text with
+    no real taxonomy to bucket into, so this reports the actual top raw diagnosis strings instead).
+    """
+    if not is_head_nurse(current_user):
+        raise HTTPException(403, "Only head nurse can view reports")
+    days = max(1, min(days, 90))
+    org_id = current_user.get("organization_id")
+
+    org_patient_ids = [p.id for p in db.query(Patient.id).filter(Patient.organization_id == org_id).all()]
+
+    today = datetime.utcnow().date()
+    start_day = today - timedelta(days=days - 1)
+
+    task_completion_per_day = []
+    for i in range(days):
+        day = start_day + timedelta(days=i)
+        day_start = datetime(day.year, day.month, day.day)
+        day_end = day_start + timedelta(days=1)
+        due_count = 0
+        completed_count = 0
+        if org_patient_ids:
+            due_count = db.query(Task).filter(
+                Task.patient_id.in_(org_patient_ids),
+                Task.due_date >= day_start, Task.due_date < day_end,
+            ).count()
+            completed_count = db.query(Task).filter(
+                Task.patient_id.in_(org_patient_ids),
+                Task.status == "Completed",
+                Task.completed_at >= day_start, Task.completed_at < day_end,
+            ).count()
+        task_completion_per_day.append({"date": day.isoformat(), "due": due_count, "completed": completed_count})
+
+    active_patients = db.query(Patient).filter(Patient.organization_id == org_id, Patient.status == "Active").all()
+
+    ward_counts = defaultdict(int)
+    diagnosis_counts = defaultdict(int)
+    for p in active_patients:
+        ward_counts[(p.ward or "").strip() or "Unassigned"] += 1
+        diag = (p.diagnosis or "").strip()
+        if diag:
+            diagnosis_counts[diag] += 1
+
+    patients_by_ward = [{"ward": w, "count": c} for w, c in sorted(ward_counts.items(), key=lambda x: -x[1])]
+    top_diagnoses = sorted(diagnosis_counts.items(), key=lambda x: -x[1])[:10]
+    diagnosis_distribution = [{"diagnosis": d, "count": c} for d, c in top_diagnoses]
+
+    return {
+        "period_days": days,
+        "task_completion_per_day": task_completion_per_day,
+        "patients_by_ward": patients_by_ward,
+        "diagnosis_distribution": diagnosis_distribution,
+    }
+
+@app.get("/api/ipd/dashboard-summary")
+def ipd_dashboard_summary(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """4 scoped COUNT queries backing the HeadNurse dashboard KPI tiles -- real numbers, unlike
+    the reference mockup's hardcoded-and-disconnected-from-its-own-mock-data KPIs."""
+    if not is_head_nurse(current_user):
+        raise HTTPException(403, "Only head nurse can view the dashboard summary")
+    org_id = current_user.get("organization_id")
+
+    total_patients = db.query(Patient).filter(Patient.organization_id == org_id, Patient.status == "Active").count()
+    assigned_patients = db.query(NurseAssignment).join(Patient, NurseAssignment.patient_id == Patient.id).filter(
+        Patient.organization_id == org_id, Patient.status == "Active", NurseAssignment.status == "Active",
+    ).count()
+
+    org_patient_ids = [p.id for p in db.query(Patient.id).filter(Patient.organization_id == org_id).all()]
+    pending_tasks = 0
+    completed_tasks = 0
+    if org_patient_ids:
+        pending_tasks = db.query(Task).filter(
+            Task.patient_id.in_(org_patient_ids), Task.status != "Completed"
+        ).count()
+        completed_tasks = db.query(Task).filter(
+            Task.patient_id.in_(org_patient_ids), Task.status == "Completed"
+        ).count()
+
+    return {
+        "total_patients": total_patients,
+        "assigned_patients": assigned_patients,
+        "pending_tasks": pending_tasks,
+        "completed_tasks": completed_tasks,
+    }
 
 @app.post("/api/ipd/vitals")
 async def record_vital(request: Request, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -1365,6 +1818,8 @@ async def update_task(task_id: int, request: Request, current_user: dict = Depen
         raise HTTPException(403, "Not authorized to update this task")
     data = await request.json()
     if "status" in data:
+        if data["status"] not in ("Pending", "Completed"):
+            raise HTTPException(400, "status must be one of ['Pending', 'Completed']")
         task.status = data["status"]
         if data["status"] == "Completed":
             task.completed_at = datetime.utcnow()

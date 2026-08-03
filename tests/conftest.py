@@ -25,6 +25,10 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
 os.environ["SECRET_KEY"] = "test-secret-key-not-for-production"
 os.environ["GROQ_API_KEY"] = "test-dummy-groq-key"
 os.environ["GROQ_MODEL"] = "test-model"
+# Many legitimate tests fire dozens of auth calls from the same test-client "IP" well within
+# a minute (bulk make_user() fixtures, concurrency tests' 20 simultaneous logins, etc.) --
+# the rate limiter is exercised by its own dedicated test instead (see test_rate_limiting.py).
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient

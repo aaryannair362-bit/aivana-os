@@ -136,6 +136,7 @@ def _bootstrap_app():
     db_path = Path(tempfile.mkdtemp(prefix="aivana_scale_db_")) / "scale_run.db"
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     os.environ.setdefault("SECRET_KEY", "scale-run-secret-not-for-production")
+    os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
     from app import main as app_main
     from app.config import settings
@@ -248,6 +249,9 @@ def _drive_opd_consult(context, base_url, doctor, patient_id, utterances):
         if "Error" in pre_status:
             out["error"] = f"scribe call failed: {pre_status}"
             return out
+        # Wizard navigation: Clinical Note -> Interactions -> Prescription, where Finalize lives.
+        page.click("#continue-to-interactions-btn")
+        page.click("#continue-to-prescription-btn")
         page.click("#finalize-btn")
         # Finalize triggers a REAL server-side drug-interaction LLM call (reasoning tokens
         # included even with reasoning_format=hidden) before it updates the status text --
@@ -437,7 +441,7 @@ def run_scenario(scenario, ctx):
         ward = "OPD Walk-in" if scenario.admission_days == 0 else "General Ward"
         r = requests.post(f"{base_url}/api/ipd/patients", headers=ns_headers, json={
             "name": f"Test Patient {scenario.test_id}", "age": scenario.age,
-            "gender": scenario.gender, "ward": ward, "bed": "T1", "diagnosis": "",
+            "gender": scenario.gender, "ward": ward, "bed": f"T-{scenario.test_id}", "diagnosis": "",
         }, timeout=15)
         r.raise_for_status()
         patient_id = r.json()["id"]

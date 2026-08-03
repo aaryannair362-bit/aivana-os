@@ -106,3 +106,6 @@ def is_nurse(user: dict) -> bool:
 
 def is_admin(user: dict) -> bool:
     return user.get("role") == "Admin"
+
+def is_pharmacist(user: dict) -> bool:
+    return user.get("role") == "Pharmacist"

@@ -33,12 +33,20 @@ def test_admit_patient_with_emoji_in_diagnosis_notes(client, station, auth_heade
     assert resp.status_code == 200
 
 
-@pytest.mark.parametrize("age", [0, 1, 120, 150])
+@pytest.mark.parametrize("age", [0, 1, 120, 130])
 def test_admit_patient_various_age_boundaries_accepted(client, station, auth_headers, age):
-    resp = client.post("/api/ipd/patients", json={"name": "Age Test", "ward": "General", "bed": "A1", "age": age},
+    resp = client.post("/api/ipd/patients", json={"name": f"Age Test {age}", "ward": "General", "bed": f"A-{age}", "age": age},
                         headers=auth_headers(station))
     assert resp.status_code == 200
     assert resp.json()["id"] is not None
+
+
+def test_admit_patient_age_above_130_rejected(client, station, auth_headers):
+    """age validation was added alongside the Ward model -- 130 is the accepted upper bound,
+    131 and above is rejected (see test_ipd_admit_validation.py for the full validation suite)."""
+    resp = client.post("/api/ipd/patients", json={"name": "Too Old", "ward": "General", "bed": "A2", "age": 150},
+                        headers=auth_headers(station))
+    assert resp.status_code == 400
 
 
 def test_admit_newborn_age_zero(client, station, auth_headers):
@@ -50,13 +58,12 @@ def test_admit_newborn_age_zero(client, station, auth_headers):
     assert details["patient"]["age"] == 0
 
 
-def test_admit_patient_with_negative_age_accepted_without_validation(client, station, auth_headers):
-    """Documents a gap parallel to the existing negative-vital-value gap: no physiological
-    range validation exists on age either. Not silently patched -- same rationale as
-    TEST_NOTES.md's vitals section: no canonical valid range is defined anywhere in the codebase."""
+def test_admit_patient_with_negative_age_rejected(client, station, auth_headers):
+    """age validation (0 <= age <= 130) was added alongside the Ward model -- negative ages are
+    now rejected, closing the gap this test used to document."""
     resp = client.post("/api/ipd/patients", json={"name": "Negative Age", "ward": "General", "bed": "N2", "age": -5},
                         headers=auth_headers(station))
-    assert resp.status_code == 200
+    assert resp.status_code == 400
 
 
 def test_admit_patient_missing_optional_fields(client, station, auth_headers):

@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import time
 import requests
@@ -8,15 +9,20 @@ from . import lab_test_matcher
 
 MAX_RATE_LIMIT_RETRIES = 3
 
+# Doctor-patient transcripts and the AI's structured output derived from them are PHI. Raw
+# request/response content is only ever emitted at DEBUG (off by default -- Python's logging
+# defaults to WARNING when unconfigured), so a log aggregator capturing default-level output
+# never sees it; only someone who deliberately enables DEBUG logging does.
+logger = logging.getLogger(__name__)
+
 class ScribeEngine:
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
         self.model = settings.GROQ_MODEL
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
         self._reasoning_format_supported = True
-        print(f"DEBUG: GROQ_API_KEY present: {bool(self.api_key)}")
-        print(f"DEBUG: GROQ_API_KEY length: {len(self.api_key) if self.api_key else 0}")
-        print(f"DEBUG: GROQ_MODEL: {self.model}")
+        logger.info("GROQ_API_KEY present: %s, length: %d, model: %s",
+                    bool(self.api_key), len(self.api_key) if self.api_key else 0, self.model)
 
         self.system_prompt = """You are an exceptionally precise clinical transcription assistant (scribe) for a General Medicine OPD clinician.
 Analyze the doctor-patient conversation transcript and synthesize an accurate clinical prescription draft with maximum fidelity to the spoken facts.
@@ -81,22 +87,24 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
                 # blocking a real request for tens of minutes.
                 retry_after = response.headers.get("retry-after")
                 wait = min(float(retry_after), 20) if retry_after else min(3 * (2 ** _retry), 20)
-                print(f"Groq 429 rate limited, retrying in {wait:.1f}s (attempt {_retry + 1}/{MAX_RATE_LIMIT_RETRIES})")
+                logger.warning("Groq 429 rate limited, retrying in %.1fs (attempt %d/%d)",
+                               wait, _retry + 1, MAX_RATE_LIMIT_RETRIES)
                 time.sleep(wait)
                 return self._call_groq_api(prompt, system, temperature, _retry=_retry + 1)
             response.raise_for_status()
             data = response.json()
             return data["choices"][0]["message"]["content"]
         except requests.exceptions.RequestException as e:
-            print(f"Groq API error: {e}")
+            logger.error("Groq API error: %s", e)
             if hasattr(e, 'response') and e.response:
-                print(f"Response body: {e.response.text}")
+                # response body can echo request content back (PHI) -- debug-only
+                logger.debug("Response body: %s", e.response.text)
             raise
 
     def _generate_json(self, prompt: str, system: str = None, temperature: float = 0.3) -> dict:
         try:
             raw = self._call_groq_api(prompt, system, temperature)
-            print(f"RAW RESPONSE: {raw[:500]}...")  # log first 500 chars
+            logger.debug("RAW RESPONSE: %s...", raw[:500])
             # Defense-in-depth: _call_groq_api already requests reasoning_format="hidden" so
             # a <think>...</think> block should never appear in `content`, but strip one out
             # if it does anyway (e.g. a future model/provider change reintroduces it) rather
@@ -117,12 +125,14 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
                 # "true") is not a parse error, so it wouldn't hit the except clause below --
                 # but every caller immediately does result.get(...), which would crash with a
                 # raw AttributeError. Treat a non-dict result the same as a parse failure.
-                print(f"Groq returned valid JSON of the wrong shape ({type(result).__name__}, expected dict): {cleaned[:200]}")
+                logger.warning("Groq returned valid JSON of the wrong shape (%s, expected dict)",
+                               type(result).__name__)
+                logger.debug("Wrong-shape content: %s", cleaned[:200])
                 return self._fallback_extract(raw)
             return result
         except json.JSONDecodeError as e:
-            print(f"JSON parsing error: {e}")
-            print(f"Raw content that failed: {raw[:1000]}")
+            logger.error("JSON parsing error: %s", e)
+            logger.debug("Raw content that failed: %s", raw[:1000])
             # Some models wrap the JSON in explanatory prose despite the prompt asking for
             # pure JSON (verified live: "Based on the transcript, here's..." before the
             # object, "Note that the hpi field is empty because..." after it) -- the fence
@@ -139,7 +149,7 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
                     pass
             return self._fallback_extract(raw)
         except Exception as e:
-            print(f"Unexpected error in _generate_json: {e}")
+            logger.error("Unexpected error in _generate_json: %s", e)
             return {}
 
     def _fallback_extract(self, text: str) -> dict:
@@ -356,7 +366,7 @@ If information for a field is not present in the input above, use an empty strin
             resp = requests.get("https://api.groq.com/openai/v1/models", headers=headers, timeout=10)
             return resp.status_code == 200
         except Exception as e:
-            print(f"is_available exception: {e}")
+            logger.error("is_available exception: %s", e)
             return False
 
     def pull_model(self) -> bool:

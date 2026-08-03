@@ -93,8 +93,9 @@ def test_record_vital_for_nonexistent_patient_returns_404(client, head_nurse, au
 
 # ---------------------------------------------------------------------------
 # Abnormal-vital flagging boundaries (main.py get_ipd_patients:
-# bp_systolic > 140 OR bp_diastolic > 90 OR heart_rate > 100 OR temperature > 38).
-# Strict "greater than" -- exact threshold values must NOT be flagged.
+# bp_systolic > 140 OR bp_diastolic > 90 OR heart_rate > 100 OR heart_rate < 60 OR
+# temperature > 38 OR oxygen_sat < 92). Strict inequalities -- exact threshold values must
+# NOT be flagged.
 # ---------------------------------------------------------------------------
 
 def _record_vital(client, auth_headers, head_nurse, patient_id, **vitals):
@@ -140,17 +141,48 @@ def test_patient_with_no_vitals_recorded_is_not_flagged_abnormal(client, auth_he
     assert _is_flagged(client, auth_headers, head_nurse, patient_id) is False
 
 
-def test_negative_vital_values_are_accepted_without_validation(client, auth_headers, head_nurse, patient_id):
+def test_negative_bp_is_stored_without_validation_and_still_not_flagged(client, auth_headers, head_nurse, patient_id):
     """
-    Documents current behavior (see TEST_NOTES.md "vital range validation"): a physiologically
-    impossible negative heart rate is stored as-is and, since the abnormal check only tests
-    for values ABOVE a high threshold, is never flagged -- a negative or zero vital silently
-    passes through as "normal". This is a known gap, not silently patched with an invented
-    valid-range, since the codebase defines no canonical physiological bounds.
+    Documents a real, still-open gap (see TEST_NOTES.md "vital range validation"): there is no
+    physiological-range validation on write, so a negative blood pressure is stored as-is.
+    Unlike heart rate (below), there is no low-BP threshold, so this specific case still passes
+    through as "normal" -- not fixed here since the codebase defines no canonical low-BP bound.
     """
-    resp = _record_vital(client, auth_headers, head_nurse, patient_id, heart_rate=-10, bp_systolic=-50)
+    resp = _record_vital(client, auth_headers, head_nurse, patient_id, bp_systolic=-50, heart_rate=70)
     assert resp.status_code == 200
     assert _is_flagged(client, auth_headers, head_nurse, patient_id) is False
+
+
+def test_negative_heart_rate_is_stored_without_validation_but_now_flagged_abnormal(client, auth_headers, head_nurse, patient_id):
+    """
+    Still no physiological-range validation on write (a negative heart rate is stored as-is),
+    but it's no longer silently "normal": the low-heart-rate threshold added to catch real
+    bradycardia (< 60 bpm) also happens to catch this physiologically impossible value, since
+    -10 < 60.
+    """
+    resp = _record_vital(client, auth_headers, head_nurse, patient_id, heart_rate=-10)
+    assert resp.status_code == 200
+    assert _is_flagged(client, auth_headers, head_nurse, patient_id) is True
+
+
+@pytest.mark.parametrize("field,boundary,below", [
+    ("heart_rate", 60, 59),
+    ("oxygen_sat", 92, 91),
+])
+def test_low_side_abnormal_vital_boundary_exact_value_not_flagged(client, auth_headers, head_nurse, patient_id, field, boundary, below):
+    _record_vital(client, auth_headers, head_nurse, patient_id, **{field: boundary})
+    assert _is_flagged(client, auth_headers, head_nurse, patient_id) is False, (
+        f"{field}={boundary} (exactly the threshold) was flagged abnormal; rule is strict '<'"
+    )
+
+
+@pytest.mark.parametrize("field,boundary,below", [
+    ("heart_rate", 60, 59),
+    ("oxygen_sat", 92, 91),
+])
+def test_low_side_abnormal_vital_boundary_just_below_is_flagged(client, auth_headers, head_nurse, patient_id, field, boundary, below):
+    _record_vital(client, auth_headers, head_nurse, patient_id, **{field: below})
+    assert _is_flagged(client, auth_headers, head_nurse, patient_id) is True
 
 
 # ---------------------------------------------------------------------------

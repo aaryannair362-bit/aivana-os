@@ -6,85 +6,161 @@
     <title>AIVANA OPD Scribe - Doctor</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
-                * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background: #FBFAF7; color: #1C2621; min-height: 100vh; }
-        .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #FFFFFF; border-bottom: 1px solid #E6E7E2; flex-wrap: wrap; gap: 10px; }
-        .app-header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #2F6F52, #2F6F52); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        :root {
+            --paper: #FBFAF7; --paper-alt: #F3F2EE; --surface: #FFFFFF; --line: #E6E7E2;
+            --ink-900: #1C2621; --ink-700: #384540; --ink-500: #667169; --ink-400: #93998F;
+            --sage-800: #234E39; --sage-700: #2F6F52; --sage-100: #E6F1EA;
+            --clay-600: #C1694F; --clay-100: #F7E4DE;
+            --amber-700: #8A5B22; --amber-100: #F2E4CF;
+            --radius-lg: 18px; --radius-md: 12px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background: var(--paper); color: var(--ink-900); min-height: 100vh; }
+        .font-display { font-family: 'Fraunces', serif; }
+        .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; gap: 10px; }
+        .app-header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, var(--sage-700), var(--sage-700)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .header-right span { font-size: 12px; color: #667169; }
+        .header-right span { font-size: 12px; color: var(--ink-500); }
+        .status-chip { display:inline-flex; align-items:center; gap: 6px; font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 999px; background: var(--sage-100); color: var(--sage-800); }
+        .status-chip .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--sage-700); }
+        .status-chip.offline { background: var(--clay-100); color: var(--clay-600); }
+        .status-chip.offline .dot { background: var(--clay-600); }
         .app-main { display: flex; flex: 1; }
-        .sidebar { width: 180px; background: #F3F2EE; border-right: 1px solid #E6E7E2; padding: 12px 0; }
-        .sidebar button { display: block; width: 100%; padding: 12px 20px; background: transparent; border: none; color: #667169; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.2s; }
-        .sidebar button:hover { background: #E6E7E2; color: #1C2621; }
-        .sidebar button.active { background: #E6E7E2; color: #2F6F52; border-right: 2px solid #2F6F52; }
+        .sidebar { width: 180px; background: var(--paper-alt); border-right: 1px solid var(--line); padding: 12px 0; }
+        .sidebar button { display: block; width: 100%; padding: 12px 20px; background: transparent; border: none; color: var(--ink-500); font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.2s; }
+        .sidebar button:hover { background: var(--line); color: var(--ink-900); }
+        .sidebar button.active { background: var(--line); color: var(--sage-700); border-right: 2px solid var(--sage-700); }
         .content { flex: 1; padding: 20px; overflow-y: auto; max-height: calc(100vh - 80px); }
         .view { display: none; }
         .view.active { display: block; }
-        .control-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-        .control-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #667169; }
-        .control-bar select { padding: 6px 10px; background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 12px; outline: none; }
-        .btn-primary { padding: 8px 20px; background: linear-gradient(135deg, #2F6F52, #234E39); border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        .page-title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+        .page-sub { font-size: 13px; color: var(--ink-500); margin-bottom: 18px; }
+        .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 24px; }
+        .card-narrow { max-width: 720px; }
+        .card-title { font-size: 16px; font-weight: 700; }
+        .card-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .field-label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-500); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.02em; }
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .select, .input { width: 100%; padding: 8px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; color: var(--ink-900); font-size: 13px; outline: none; }
+        .select:focus, .input:focus { border-color: var(--sage-700); }
+        .btn-primary { padding: 8px 20px; background: linear-gradient(135deg, var(--sage-700), var(--sage-800)); border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
         .btn-primary:hover { opacity: 0.9; }
         .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary { padding: 6px 14px; background: #E6E7E2; border: 1px solid #E6E7E2; border-radius: 8px; color: #1C2621; font-size: 12px; cursor: pointer; }
+        .btn-secondary { padding: 6px 14px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; color: var(--ink-900); font-size: 12px; cursor: pointer; }
         .btn-secondary:hover { background: #EDEEE8; }
-        .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid #E6E7E2; border-radius: 8px; color: #667169; font-size: 12px; cursor: pointer; }
-        .btn-outline:hover { border-color: #93998F; color: #1C2621; }
-        .btn-danger { padding: 6px 14px; background: #C1694F; border: none; border-radius: 8px; color: white; cursor: pointer; }
-        #transcript-input { width: 100%; padding: 12px; background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 8px; color: #1C2621; font-family: monospace; font-size: 13px; resize: vertical; min-height: 80px; outline: none; margin-bottom: 8px; }
-        #transcript-input:focus { border-color: #2F6F52; }
+        .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid var(--line); border-radius: 8px; color: var(--ink-500); font-size: 12px; cursor: pointer; }
+        .btn-outline:hover { border-color: #93998F; color: var(--ink-900); }
+        .btn-danger { padding: 6px 14px; background: var(--clay-600); border: none; border-radius: 8px; color: white; cursor: pointer; }
+
+        /* ---- stepper ---- */
+        .stepper { display:flex; align-items:center; margin: 6px 0 24px; flex-wrap: wrap; row-gap: 10px; }
+        .step { display:flex; align-items:center; gap: 9px; cursor: pointer; }
+        .step[data-disabled="true"] { cursor: default; opacity: 0.55; }
+        .step-dot { width: 26px; height: 26px; border-radius: 999px; background: var(--paper-alt); color: var(--ink-400);
+          display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:700; flex-shrink:0; border: 1.5px solid var(--line); }
+        .step.active .step-dot { background: var(--sage-700); color: white; border-color: var(--sage-700); }
+        .step.done .step-dot { background: var(--sage-100); color: var(--sage-800); border-color: var(--sage-100); }
+        .step-label { font-size: 12.5px; font-weight: 600; color: var(--ink-400); white-space:nowrap; }
+        .step.active .step-label { color: var(--ink-900); }
+        .step.done .step-label { color: var(--sage-700); }
+        .step-line { flex: 1; height: 1.5px; background: var(--line); margin: 0 12px; min-width: 20px; }
+        .step-panel { display: none; }
+        .step-panel.active { display: block; }
+
+        /* ---- setup / patient picker ---- */
+        .patient-pick-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin: 10px 0 20px; }
+        .patient-pick { border: 1.5px solid var(--line); border-radius: var(--radius-md); padding: 14px; display:flex; align-items:center; gap: 10px; cursor:pointer; background: var(--surface); }
+        .patient-pick.active { border-color: var(--sage-700); background: var(--sage-100); }
+        .row-avatar { width: 38px; height: 38px; border-radius: 999px; background: var(--sage-100); color: var(--sage-800); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
+        .row-title { font-size: 13.5px; font-weight: 600; color: var(--ink-900); }
+        .row-sub { font-size: 12px; color: var(--ink-500); margin-top: 2px; }
+        .toggle { width: 40px; height: 24px; border-radius: 999px; background: var(--line); position:relative; cursor:pointer; border:none; flex-shrink:0; transition: background .15s ease; padding:0; }
+        .toggle.on { background: var(--sage-700); }
+        .toggle .knob { position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:999px; background:white; transition: left .15s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+        .toggle.on .knob { left: 19px; }
+
+        /* ---- transcript ---- */
+        #transcript-input { width: 100%; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); color: var(--ink-700); font-family: monospace; font-size: 13px; resize: vertical; min-height: 220px; outline: none; margin-bottom: 8px; line-height: 1.6; }
+        #transcript-input:focus { border-color: var(--sage-700); }
         #transcript-input:disabled { opacity: 0.6; }
-        #analysis-status { font-size: 13px; color: #2F6F52; min-height: 24px; margin: 8px 0; }
-        #analysis-status.error { color: #C1694F; }
-        #analysis-status.success { color: #2F6F52; }
+        #analysis-status { font-size: 13px; color: var(--sage-700); min-height: 24px; margin: 8px 0; }
+        #analysis-status.error { color: var(--clay-600); }
+        #analysis-status.success { color: var(--sage-700); }
         #mic-status { font-size: 12px; padding: 4px 12px; border-radius: 12px; display: inline-block; margin-left: 8px; }
-        #mic-status.idle { background: #E6E7E2; color: #667169; }
-        #mic-status.listening { background: #C1694F; color: white; animation: pulse 1s infinite; }
-        #mic-status.transcribing { background: #8A5B22; color: #FBFAF7; }
+        #mic-status.idle { background: var(--line); color: var(--ink-500); }
+        #mic-status.listening { background: var(--clay-600); color: white; animation: pulse 1s infinite; }
+        #mic-status.transcribing { background: var(--amber-700); color: var(--paper); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        .prescription-draft { background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 12px; padding: 20px; margin-top: 16px; }
-        .prescription-draft h2 { font-size: 18px; margin-bottom: 12px; }
-        .draft-fields > div { margin-bottom: 12px; }
-        .draft-fields label { display: block; font-size: 12px; font-weight: 600; color: #667169; margin-bottom: 4px; }
-        .draft-fields textarea, .draft-fields input { width: 100%; padding: 8px 12px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 13px; outline: none; }
-        .draft-fields textarea:focus, .draft-fields input:focus { border-color: #2F6F52; }
-        .draft-fields textarea { min-height: 50px; resize: vertical; font-family: inherit; }
-        .medication-item, .lab-item { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 4px; margin-bottom: 4px; }
-        .medication-item button, .lab-item button { background: none; border: none; color: #C1694F; cursor: pointer; font-size: 16px; margin-left: auto; }
+
+        /* ---- clinical note ---- */
+        .draft-fields > div { margin-bottom: 16px; }
+        .draft-fields label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-500); margin-bottom: 4px; }
+        .draft-fields textarea, .draft-fields input { width: 100%; padding: 8px 12px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; color: var(--ink-900); font-size: 13px; outline: none; }
+        .draft-fields textarea:focus, .draft-fields input:focus { border-color: var(--sage-700); }
+        .draft-fields textarea { min-height: 70px; resize: vertical; font-family: inherit; }
+        .medication-item, .lab-item { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; margin-bottom: 4px; }
+        .medication-item button, .lab-item button { background: none; border: none; color: var(--clay-600); cursor: pointer; font-size: 16px; margin-left: auto; }
         .medication-add, .lab-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-        .medication-add input, .lab-add input { flex: 1; min-width: 80px; padding: 6px 10px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 12px; outline: none; }
-        .medication-add select { padding: 6px 10px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 12px; outline: none; }
-        .interaction-section { margin-top: 16px; border-top: 1px solid #E6E7E2; padding-top: 12px; }
-        .interaction-item { background: #E6E7E2; padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; border-left: 4px solid #8A5B22; }
-        .interaction-item.severe { border-left-color: #C1694F; }
-        .interaction-item.moderate { border-left-color: #8A5B22; }
-        .interaction-item.mild { border-left-color: #2F6F52; }
-        .interaction-item .drug-pair { font-weight: bold; color: #1C2621; }
+        .medication-add input, .lab-add input { flex: 1; min-width: 80px; padding: 6px 10px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; color: var(--ink-900); font-size: 12px; outline: none; }
+        .medication-add select { padding: 6px 10px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; color: var(--ink-900); font-size: 12px; outline: none; }
+
+        /* ---- interactions ---- */
+        .interaction-section { margin-top: 4px; }
+        .interaction-item { background: var(--amber-100); padding: 10px 14px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid var(--amber-700); }
+        .interaction-item.severe { border-left-color: var(--clay-600); }
+        .interaction-item.moderate { border-left-color: var(--amber-700); }
+        .interaction-item.mild { border-left-color: var(--sage-700); }
+        .interaction-item .drug-pair { font-weight: bold; color: var(--ink-900); }
         .interaction-item .severity { font-size: 12px; font-weight: 600; }
-        .interaction-item .reason { font-size: 12px; color: #667169; margin-top: 2px; }
-        .interaction-item .recommendation { font-size: 12px; color: #2F6F52; margin-top: 2px; }
-        #history-list { display: flex; flex-direction: column; gap: 8px; }
-        .history-item { background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: border-color 0.2s; }
-        .history-item:hover { border-color: #2F6F52; }
-        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
-        .metric-card { background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 10px; padding: 14px; text-align: center; }
-        .metric-label { display: block; font-size: 11px; text-transform: uppercase; color: #93998F; letter-spacing: 0.5px; }
-        .metric-value { font-family: monospace; font-size: 22px; font-weight: 700; color: #2F6F52; }
-        #case-logs { background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 10px; padding: 16px; overflow-x: auto; }
+        .interaction-item .reason { font-size: 12px; color: var(--ink-500); margin-top: 2px; }
+        .interaction-item .recommendation { font-size: 12px; color: var(--sage-700); margin-top: 2px; }
+        .safe-banner { display:flex; align-items:center; gap: 10px; padding: 14px 16px; border-radius: var(--radius-md); border: 1px solid #D9E9DF; background: #F2F8F4; color: var(--sage-800); font-size: 13.5px; font-weight: 600; }
+
+        /* ---- prescription step summary ---- */
+        .rx-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 16px 0 20px; }
+        .rx-summary-item { background: var(--paper-alt); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+        .rx-summary-item .field-label { margin-bottom: 4px; }
+        .rx-summary-item .value { font-size: 14px; font-weight: 600; color: var(--ink-900); }
+
+        /* ---- history ---- */
+        .search-box { display:flex; align-items:center; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; max-width: 280px; }
+        .search-box input { border: none; outline: none; background: transparent; font-size: 13px; flex: 1; color: var(--ink-900); }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .data-table th { text-align: left; padding: 10px 12px; color: var(--ink-400); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--line); }
+        .data-table td { padding: 10px 12px; border-bottom: 1px solid var(--paper-alt); }
+        .data-table tr.clickable { cursor: pointer; }
+        .data-table tr.clickable:hover { background: var(--paper-alt); }
+        .status-badge { display:inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+        .status-badge.finalized { background: var(--sage-100); color: var(--sage-800); }
+        .status-badge.draft { background: var(--amber-100); color: var(--amber-700); }
+        .pager { display:flex; justify-content: space-between; align-items:center; margin-top: 14px; font-size: 12.5px; color: var(--ink-500); }
+        .pager button { padding: 5px 12px; }
+        .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* ---- analytics ---- */
+        .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+        @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+        .kpi-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+        .kpi-label { display: block; font-size: 11px; text-transform: uppercase; color: var(--ink-400); letter-spacing: 0.5px; margin-bottom: 6px; }
+        .kpi-value { font-family: monospace; font-size: 24px; font-weight: 700; color: var(--sage-700); }
+        .kpi-foot { font-size: 11px; color: var(--ink-400); margin-top: 4px; }
+        .chart-card { padding: 16px; }
+        #case-logs { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
         #case-logs table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        #case-logs th { text-align: left; padding: 6px 10px; color: #93998F; font-weight: 600; border-bottom: 1px solid #E6E7E2; }
-        #case-logs td { padding: 6px 10px; border-bottom: 1px solid #FBFAF7; }
+        #case-logs th { text-align: left; padding: 6px 10px; color: var(--ink-400); font-weight: 600; border-bottom: 1px solid var(--line); }
+        #case-logs td { padding: 6px 10px; border-bottom: 1px solid var(--paper-alt); }
+
         @media (max-width: 768px) {
             .app-main { flex-direction: column; }
-            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #E6E7E2; display: flex; overflow-x: auto; }
+            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--line); display: flex; overflow-x: auto; }
             .sidebar button { display: inline-block; width: auto; white-space: nowrap; }
-            .control-bar { flex-direction: column; align-items: stretch; }
-            .header-right { width: 100%; justify-content: flex-start; }
+            .field-row { grid-template-columns: 1fr; }
         }
         @media print {
             /* body itself (not just #app) carries the dark theme's background/min-height --
                override both, or the empty space below the printed content stays painted
-               #FBFAF7 instead of white. */
+               var(--paper) instead of white. */
             body { background: white !important; min-height: 0 !important; }
             /* #app is the entire dark-themed dashboard (sidebar, header, all views) --
                display:none removes it from layout entirely, not just paints it invisible,
@@ -104,98 +180,196 @@
         <div class="header-right">
             <span id="ollama-status">🔄 Checking...</span>
             <a href="/ipd.html" class="btn-outline" style="text-decoration:none; display:inline-block;">🏥 Ward Rounds</a>
-            <span id="user-email" style="color:#1C2621;"></span>
+            <span id="user-email" style="color:var(--ink-900);"></span>
             <button id="logout-btn" class="btn-outline">Logout</button>
         </div>
     </header>
     <main class="app-main">
         <aside class="sidebar">
-            <button class="active" data-view="scribe">📝 Scribe</button>
+            <button class="active" data-view="scribe">📝 Consultation</button>
             <button data-view="history">📋 History</button>
-            <button data-view="observability">📊 Metrics</button>
+            <button data-view="observability">📊 Analytics</button>
         </aside>
         <section class="content">
             <div id="scribe-view" class="view active">
-                <div class="control-bar">
-                    <select id="patient-select" style="min-width:200px; background:#F3F2EE; border:1px solid #E6E7E2; border-radius:6px; padding:6px 10px; color:#1C2621; outline:none;">
-                        <option value="">— Select Patient —</option>
-                    </select>
-                    <button id="start-consult-btn" class="btn-primary">🎤 Start Consultation</button>
-                    <button id="stop-consult-btn" class="btn-danger" style="display:none;">⏹ Stop</button>
-                    <span id="mic-status" class="idle">Idle</span>
-                    <label><input type="checkbox" id="live-mode" checked /> Live Mode</label>
-                    <select id="print-language">
-                        <option value="English">English</option>
-                        <option value="Hindi">Hindi</option>
-                        <option value="Tamil">Tamil</option>
-                        <option value="Telugu">Telugu</option>
-                        <option value="Kannada">Kannada</option>
-                        <option value="Bengali">Bengali</option>
-                        <option value="Marathi">Marathi</option>
-                        <option value="Malayalam">Malayalam</option>
-                        <option value="Gujarati">Gujarati</option>
-                        <option value="Punjabi">Punjabi</option>
-                    </select>
-                </div>
-                <textarea id="transcript-input" placeholder="Speak or paste transcript here..." rows="4"></textarea>
-                <div id="analysis-status"></div>
+                <div class="stepper" id="step-header"></div>
 
-                <div class="prescription-draft">
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-                        <h2>📋 Prescription Draft</h2>
-                        <div style="display:flex; gap:8px;">
+                <!-- ===== Step 0: Setup ===== -->
+                <div id="step-panel-setup" class="step-panel active">
+                    <div class="card card-narrow">
+                        <div class="card-title" style="margin-bottom:4px;">Select patient</div>
+                        <div class="row-sub" style="margin-bottom:4px;">Choose the patient for this consultation</div>
+                        <div id="patient-pick-grid" class="patient-pick-grid"></div>
+                        <!-- Real state-holder behind the patient-card grid above -- kept
+                             actionable (non-zero bounding box) rather than display:none, since
+                             several tests still drive it directly via select_option(). -->
+                        <select id="patient-select" style="position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;">
+                            <option value="">— Select Patient —</option>
+                        </select>
+                        <div class="field-row" style="margin-top:20px;">
+                            <div>
+                                <label class="field-label">Consultation language</label>
+                                <select id="print-language" class="select">
+                                    <option value="English">English</option>
+                                    <option value="Hindi">Hindi</option>
+                                    <option value="Tamil">Tamil</option>
+                                    <option value="Telugu">Telugu</option>
+                                    <option value="Kannada">Kannada</option>
+                                    <option value="Bengali">Bengali</option>
+                                    <option value="Marathi">Marathi</option>
+                                    <option value="Malayalam">Malayalam</option>
+                                    <option value="Gujarati">Gujarati</option>
+                                    <option value="Punjabi">Punjabi</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="field-label">Live Mode</label>
+                                <label style="display:flex; align-items:center; gap:10px; height:36px; cursor:pointer;">
+                                    <input type="checkbox" id="live-mode" checked style="width:16px;height:16px;" />
+                                    <span class="row-sub" style="margin-top:0;">Show transcript live as you speak</span>
+                                </label>
+                            </div>
+                        </div>
+                        <button id="start-consult-btn" class="btn-primary" style="margin-top:20px;">🎤 Start Consultation</button>
+                    </div>
+                </div>
+
+                <!-- ===== Step 1: Transcript ===== -->
+                <div id="step-panel-transcript" class="step-panel">
+                    <div class="card card-narrow">
+                        <div class="card-head">
+                            <div>
+                                <div class="card-title">Capture transcript</div>
+                                <div class="row-sub">Speak naturally — Stop when the consultation is complete</div>
+                            </div>
+                            <div>
+                                <button id="stop-consult-btn" class="btn-danger" style="display:none;">⏹ Stop &amp; Generate Note</button>
+                                <span id="mic-status" class="idle">Idle</span>
+                            </div>
+                        </div>
+                        <textarea id="transcript-input" placeholder="Speak or paste transcript here..." rows="4"></textarea>
+                        <div id="analysis-status"></div>
+                    </div>
+                </div>
+
+                <!-- ===== Step 2: Clinical Note ===== -->
+                <div id="step-panel-clinical-note" class="step-panel">
+                    <div class="card">
+                        <div class="card-head">
+                            <div class="card-title">📋 AI-generated clinical note</div>
                             <button id="clear-draft-btn" class="btn-outline">Clear</button>
+                        </div>
+                        <div class="draft-fields">
+                            <div><label>Chief Complaint</label><textarea id="chief-complaint"></textarea></div>
+                            <div><label>History of Present Illness (HPI)</label><textarea id="hpi"></textarea></div>
+                            <div class="field-row">
+                                <div><label>Primary Diagnosis</label><input id="primary-diagnosis" /></div>
+                                <div><label>Differential Diagnosis</label><input id="differential-diagnosis" /></div>
+                            </div>
+                            <div>
+                                <label>Medications</label>
+                                <div id="medications-list"></div>
+                                <div class="medication-add">
+                                    <input id="med-drug" placeholder="Drug Name" />
+                                    <input id="med-dose" placeholder="Dose" />
+                                    <input id="med-frequency" placeholder="Frequency" />
+                                    <select id="med-route"><option>Oral</option><option>IV</option><option>IM</option><option>SubQ</option><option>Topical</option></select>
+                                    <input id="med-duration" placeholder="Duration" />
+                                    <button id="add-med-btn" class="btn-secondary">Add</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label>Lab Tests</label>
+                                <div id="lab-tests-list"></div>
+                                <div class="lab-add">
+                                    <input id="lab-test" placeholder="Test name" />
+                                    <button id="add-lab-btn" class="btn-secondary">Add</button>
+                                </div>
+                            </div>
+                            <div><label>Advice & Instructions</label><textarea id="advice"></textarea></div>
+                        </div>
+                        <button id="continue-to-interactions-btn" class="btn-primary" style="margin-top:8px;">Continue to Interactions →</button>
+                    </div>
+                </div>
+
+                <!-- ===== Step 3: Interactions ===== -->
+                <div id="step-panel-interactions" class="step-panel">
+                    <div class="card card-narrow">
+                        <div class="card-head">
+                            <div class="card-title">⚠️ Drug Interaction Check</div>
+                            <button id="check-interactions-btn" class="btn-secondary">🔬 Re-check Interactions</button>
+                        </div>
+                        <div id="interaction-section" class="interaction-section" style="display:none;">
+                            <div id="interaction-results"></div>
+                        </div>
+                        <button id="continue-to-prescription-btn" class="btn-primary" style="margin-top:16px;">Continue to Prescription →</button>
+                    </div>
+                </div>
+
+                <!-- ===== Step 4: Prescription ===== -->
+                <div id="step-panel-prescription" class="step-panel">
+                    <div class="card card-narrow">
+                        <div class="card-title">Ready to finalize</div>
+                        <div class="row-sub" style="margin-bottom:4px;">Review the summary below, then finalize and save or prepare the Rx sheet.</div>
+                        <div class="rx-summary-grid" id="rx-summary-grid"></div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
                             <button id="print-btn" class="btn-primary">🖨️ Prepare Rx Sheet</button>
-                            <button id="check-interactions-btn" class="btn-secondary">🔬 Check Interactions</button>
-                            <button id="finalize-btn" class="btn-primary" style="background:linear-gradient(135deg, #2F6F52, #234E39);">✅ Finalize &amp; Save</button>
+                            <button id="finalize-btn" class="btn-primary" style="background:linear-gradient(135deg, var(--sage-700), var(--sage-800));">✅ Finalize &amp; Save</button>
                         </div>
-                    </div>
-                    <div class="draft-fields">
-                        <div><label>Chief Complaint</label><textarea id="chief-complaint"></textarea></div>
-                        <div><label>History of Present Illness (HPI)</label><textarea id="hpi"></textarea></div>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                            <div><label>Primary Diagnosis</label><input id="primary-diagnosis" /></div>
-                            <div><label>Differential Diagnosis</label><input id="differential-diagnosis" /></div>
-                        </div>
-                        <div>
-                            <label>Medications</label>
-                            <div id="medications-list"></div>
-                            <div class="medication-add">
-                                <input id="med-drug" placeholder="Drug Name" />
-                                <input id="med-dose" placeholder="Dose" />
-                                <input id="med-frequency" placeholder="Frequency" />
-                                <select id="med-route"><option>Oral</option><option>IV</option><option>IM</option><option>SubQ</option><option>Topical</option></select>
-                                <input id="med-duration" placeholder="Duration" />
-                                <button id="add-med-btn" class="btn-secondary">Add</button>
-                            </div>
-                        </div>
-                        <div>
-                            <label>Lab Tests</label>
-                            <div id="lab-tests-list"></div>
-                            <div class="lab-add">
-                                <input id="lab-test" placeholder="Test name" />
-                                <button id="add-lab-btn" class="btn-secondary">Add</button>
-                            </div>
-                        </div>
-                        <div><label>Advice & Instructions</label><textarea id="advice"></textarea></div>
-                    </div>
-                    <div id="interaction-section" class="interaction-section" style="display:none;">
-                        <h3>⚠️ Drug Interaction Check</h3>
-                        <div id="interaction-results"></div>
                     </div>
                 </div>
             </div>
             <div id="history-view" class="view">
-                <h2>📋 Consultation History</h2>
-                <div id="history-list"></div>
+                <div class="page-title font-display">Consultation history</div>
+                <div class="page-sub">View or reload previous consultations</div>
+                <div class="card-head" style="margin-bottom:12px;">
+                    <div class="search-box">
+                        🔎<input id="history-search" placeholder="Search by patient..." />
+                    </div>
+                </div>
+                <div class="card" style="padding:16px 8px;">
+                    <table class="data-table">
+                        <thead><tr><th>Patient</th><th>Chief complaint</th><th>Diagnosis</th><th>Doctor</th><th>Date</th><th>Status</th></tr></thead>
+                        <tbody id="history-list"></tbody>
+                    </table>
+                    <div class="pager">
+                        <span id="history-pager-label"></span>
+                        <div>
+                            <button id="history-prev-btn" class="btn-secondary">← Prev</button>
+                            <button id="history-next-btn" class="btn-secondary">Next →</button>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div id="observability-view" class="view">
-                <h2>📊 Observability Dashboard</h2>
-                <div class="metrics-grid">
-                    <div class="metric-card"><span class="metric-label">Total Cases</span><span class="metric-value" id="total-cases">0</span></div>
-                    <div class="metric-card"><span class="metric-label">Avg Latency</span><span class="metric-value" id="avg-latency">0s</span></div>
-                    <div class="metric-card"><span class="metric-label">Avg Tokens</span><span class="metric-value" id="avg-tokens">0</span></div>
-                    <div class="metric-card"><span class="metric-label">AI Assistant</span><span class="metric-value" id="ollama-status-metric">Checking...</span></div>
+                <div class="page-title font-display">Observability dashboard</div>
+                <div class="page-sub">Consultation volume, AI performance and service connectivity</div>
+                <div class="grid-3">
+                    <div class="kpi-card"><span class="kpi-label">Total Consultations</span><span class="kpi-value" id="total-cases">0</span><div class="kpi-foot" id="total-cases-foot"></div></div>
+                    <div class="kpi-card"><span class="kpi-label">Avg AI Latency</span><span class="kpi-value" id="avg-latency">—</span><div class="kpi-foot">Trailing period</div></div>
+                    <div class="kpi-card"><span class="kpi-label">Avg Tokens</span><span class="kpi-value" id="avg-tokens">—</span><div class="kpi-foot">Trailing period</div></div>
+                    <div class="kpi-card">
+                        <span class="kpi-label">AI Service Connectivity</span>
+                        <div id="ollama-status-metric" class="status-chip" style="margin-top:4px;"><span class="dot"></span> Checking…</div>
+                        <div class="kpi-foot">Live health check</div>
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="chart-card card">
+                        <div class="card-title" style="margin-bottom:8px;">Consultations per day</div>
+                        <div id="chart-consult-trend"></div>
+                    </div>
+                    <div class="chart-card card">
+                        <div class="card-title" style="margin-bottom:8px;">Avg latency trend</div>
+                        <div id="chart-latency-trend"></div>
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="chart-card card">
+                        <div class="card-title" style="margin-bottom:8px;">Token usage trend</div>
+                        <div id="chart-token-trend"></div>
+                    </div>
+                    <div></div>
                 </div>
                 <div id="case-logs"></div>
             </div>
@@ -258,6 +432,58 @@ function showView(id) {
     document.querySelector(`.sidebar button[data-view="${id}"]`)?.classList.add('active');
 }
 
+// ---------------------------------------------------------------------------
+// Step wizard (Setup -> Transcript -> Clinical Note -> Interactions -> Prescription).
+// Purely a navigation/orchestration layer around the unchanged core functions below --
+// it never alters what processConsultation/checkInteractions/finalizeConsultation/
+// populateDraft/updatePrintPreview compute, only when their surrounding panel is shown.
+// ---------------------------------------------------------------------------
+const STEPS = ['Setup', 'Transcript', 'Clinical Note', 'Interactions', 'Prescription'];
+const STEP_IDS = ['setup', 'transcript', 'clinical-note', 'interactions', 'prescription'];
+let currentStep = 0;
+let maxReachedStep = 0;
+
+function renderStepHeader() {
+    const header = document.getElementById('step-header');
+    header.innerHTML = STEPS.map((label, i) => `
+        <div class="step ${i === currentStep ? 'active' : i < currentStep ? 'done' : ''}" data-step="${i}" data-disabled="${i > maxReachedStep}">
+            <div class="step-dot">${i < currentStep ? '✓' : i + 1}</div>
+            <div class="step-label">${label}</div>
+        </div>
+        ${i < STEPS.length - 1 ? '<div class="step-line"></div>' : ''}
+    `).join('');
+    header.querySelectorAll('.step').forEach(el => {
+        el.addEventListener('click', () => {
+            const i = parseInt(el.dataset.step, 10);
+            if (i <= maxReachedStep) goToStep(i);
+        });
+    });
+}
+
+function goToStep(n) {
+    currentStep = n;
+    if (n > maxReachedStep) maxReachedStep = n;
+    STEP_IDS.forEach((id, i) => {
+        document.getElementById(`step-panel-${id}`).classList.toggle('active', i === n);
+    });
+    if (n === 4) renderRxSummary();
+    renderStepHeader();
+}
+
+function renderRxSummary() {
+    const grid = document.getElementById('rx-summary-grid');
+    const medsCount = document.querySelectorAll('#medications-list .medication-item span').length;
+    const labsCount = document.querySelectorAll('#lab-tests-list .lab-item span').length;
+    grid.innerHTML = `
+        <div class="rx-summary-item"><div class="field-label">Patient</div><div class="value">${currentPatientName || 'N/A'}</div></div>
+        <div class="rx-summary-item"><div class="field-label">Diagnosis</div><div class="value">${document.getElementById('primary-diagnosis').value || 'N/A'}</div></div>
+        <div class="rx-summary-item"><div class="field-label">Medications</div><div class="value">${medsCount}</div></div>
+        <div class="rx-summary-item"><div class="field-label">Lab Tests</div><div class="value">${labsCount}</div></div>
+    `;
+}
+
+renderStepHeader();
+
 async function loadUserInfo() {
     const res = await apiRequest('/auth/me');
     if (res.ok) {
@@ -267,11 +493,36 @@ async function loadUserInfo() {
         checkGroqStatus();
         loadPatients();
         loadConsultations();
-        loadMetrics();
     } else {
         localStorage.clear();
         window.location.href = '/index.html';
     }
+}
+
+function renderPatientCards(patients) {
+    const grid = document.getElementById('patient-pick-grid');
+    if (!patients || patients.length === 0) {
+        grid.innerHTML = '<p style="color:var(--ink-400); font-size:13px;">No patients available yet.</p>';
+        return;
+    }
+    grid.innerHTML = patients.map(p => {
+        const initials = (p.name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+        const details = [p.age ? `${p.age}y` : null, p.gender, p.ward].filter(Boolean).join(' · ');
+        return `
+            <div class="patient-pick ${String(p.id) === String(patientSelect.value) ? 'active' : ''}" data-patient-id="${p.id}">
+                <div class="row-avatar">${initials}</div>
+                <div><div class="row-title">${p.name}</div><div class="row-sub">${details}</div></div>
+            </div>
+        `;
+    }).join('');
+    grid.querySelectorAll('.patient-pick').forEach(el => {
+        el.addEventListener('click', () => {
+            patientSelect.value = el.dataset.patientId;
+            patientSelect.dispatchEvent(new Event('change'));
+            grid.querySelectorAll('.patient-pick').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+        });
+    });
 }
 
 async function loadPatients() {
@@ -279,6 +530,7 @@ async function loadPatients() {
     if (res.ok) {
         const patients = await res.json();
         patientSelect.innerHTML = '<option value="">— Select Patient —</option>' + patients.map(p => `<option value="${p.id}">${p.name} (${p.ward})</option>`).join('');
+        renderPatientCards(patients);
     }
 }
 
@@ -291,11 +543,14 @@ async function checkGroqStatus() {
             const metricEl = document.getElementById('ollama-status-metric');
             if (data.groq_available !== undefined) {
                 el.textContent = data.groq_available ? '✅ AI Assistant Ready' : '❌ AI Assistant Unavailable';
-                el.style.color = data.groq_available ? '#2F6F52' : '#C1694F';
-                if (metricEl) metricEl.textContent = data.groq_available ? '✅ Connected' : '❌ Disconnected';
+                el.style.color = data.groq_available ? 'var(--sage-700)' : 'var(--clay-600)';
+                if (metricEl) {
+                    metricEl.className = `status-chip ${data.groq_available ? '' : 'offline'}`;
+                    metricEl.innerHTML = `<span class="dot"></span> ${data.groq_available ? 'Connected' : 'Disconnected'}`;
+                }
             } else {
                 el.textContent = '✅ AI Available';
-                el.style.color = '#2F6F52';
+                el.style.color = 'var(--sage-700)';
             }
         }
     } catch(e) {
@@ -346,9 +601,14 @@ function startSpeechRecognition() {
                     else interim += event.results[i][0].transcript;
                 }
                 if (final) { accumulatedTranscript += final; }
-                const fullText = (accumulatedTranscript + ' ' + interim).trim();
-                transcriptInput.value = fullText;
-                transcriptInput.scrollTop = transcriptInput.scrollHeight;
+                // Live Mode gates whether interim/final speech shows in the transcript box
+                // before Stop is clicked, or only gets committed once Stop runs -- see the
+                // stop-consult-btn handler below for the "commit on stop" path.
+                if (document.getElementById('live-mode').checked) {
+                    const fullText = (accumulatedTranscript + ' ' + interim).trim();
+                    transcriptInput.value = fullText;
+                    transcriptInput.scrollTop = transcriptInput.scrollHeight;
+                }
             };
             recognition.onerror = (event) => {
                 console.error('Speech error:', event.error);
@@ -397,20 +657,27 @@ document.getElementById('start-consult-btn').addEventListener('click', () => {
         return;
     }
     selectedPatientId = patientId;
+    goToStep(1);
     startSpeechRecognition();
 });
 
-document.getElementById('stop-consult-btn').addEventListener('click', () => {
+document.getElementById('stop-consult-btn').addEventListener('click', async () => {
     isConsulting = false;
     stopBtn.style.display = 'none';
     startBtn.style.display = 'inline-block';
     setMicStatus('idle', 'Stopped');
     if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
+    if (!document.getElementById('live-mode').checked) {
+        // Live Mode was off -- the box was never updated during listening, so commit the
+        // full accumulated transcript now.
+        transcriptInput.value = accumulatedTranscript.trim();
+    }
     const finalText = transcriptInput.value.trim();
     if (finalText.length >= 10) {
         analysisStatus.className = '';
         analysisStatus.textContent = '🔄 Processing consultation...';
-        processConsultation(finalText);
+        await processConsultation(finalText);
+        if (currentConsultationId) goToStep(2);
     } else {
         analysisStatus.className = 'error';
         analysisStatus.textContent = '⚠️ Transcript too short (minimum 10 characters). Please provide more text.';
@@ -435,7 +702,6 @@ async function processConsultation(transcript) {
         analysisStatus.className = 'success';
         analysisStatus.textContent = `✅ Prescription ready!${taskNote} Review and click Finalize & Save when done.`;
         loadConsultations();
-        loadMetrics();
         await checkInteractions();
     } catch(e) {
         analysisStatus.className = 'error';
@@ -452,13 +718,13 @@ function renderInteractions(interactions) {
         container.innerHTML = interactions.map(i => `
             <div class="interaction-item ${i.severity ? i.severity.toLowerCase() : ''}">
                 <div class="drug-pair">${i.drug_pair || 'Unknown pair'}</div>
-                <div class="severity" style="color:${i.severity === 'Severe' ? '#C1694F' : i.severity === 'Moderate' ? '#8A5B22' : '#2F6F52'}">Severity: ${i.severity || 'Unknown'}</div>
+                <div class="severity" style="color:${i.severity === 'Severe' ? 'var(--clay-600)' : i.severity === 'Moderate' ? 'var(--amber-700)' : 'var(--sage-700)'}">Severity: ${i.severity || 'Unknown'}</div>
                 <div class="reason">Reason: ${i.reason || 'No reason provided'}</div>
                 <div class="recommendation">Recommendation: ${i.recommendation || 'Consult pharmacist'}</div>
             </div>
         `).join('');
     } else {
-        container.innerHTML = '<div style="color:#2F6F52;">✅ No drug interactions detected.</div>';
+        container.innerHTML = '<div class="safe-banner">✅ No drug interactions detected.</div>';
     }
 }
 
@@ -508,6 +774,11 @@ function getLabTests() {
 }
 
 document.getElementById('check-interactions-btn').addEventListener('click', checkInteractions);
+document.getElementById('continue-to-interactions-btn').addEventListener('click', async () => {
+    await checkInteractions();
+    goToStep(3);
+});
+document.getElementById('continue-to-prescription-btn').addEventListener('click', () => goToStep(4));
 
 async function finalizeConsultation() {
     if (!currentConsultationId) {
@@ -566,7 +837,7 @@ function populateDraft(data) {
     } else {
         const div = document.createElement('div');
         div.className = 'medication-item';
-        div.innerHTML = `<span style="color:#93998F;">No medications found.</span>`;
+        div.innerHTML = `<span style="color:var(--ink-400);">No medications found.</span>`;
         medList.appendChild(div);
     }
     const labList = document.getElementById('lab-tests-list');
@@ -581,7 +852,7 @@ function populateDraft(data) {
     } else {
         const div = document.createElement('div');
         div.className = 'lab-item';
-        div.innerHTML = `<span style="color:#93998F;">No lab tests recommended.</span>`;
+        div.innerHTML = `<span style="color:var(--ink-400);">No lab tests recommended.</span>`;
         labList.appendChild(div);
     }
 }
@@ -634,10 +905,46 @@ document.getElementById('add-lab-btn').addEventListener('click', () => {
 
 document.getElementById('print-btn').addEventListener('click', openPrintModal);
 
-function openPrintModal() {
+async function openPrintModal() {
     const modal = document.getElementById('print-modal') || createPrintModal();
     modal.style.display = 'flex';
+    await applyPrintTranslationIfNeeded();
     updatePrintPreview();
+}
+
+async function applyPrintTranslationIfNeeded() {
+    // Wires up the previously-dead #print-language dropdown for real: translates a SNAPSHOT
+    // of the draft for the printed Rx sheet only, then restores the doctor's own English
+    // working fields synchronously right after -- updatePrintPreview()'s own read-from-DOM
+    // logic is never touched, and the live clinical note editor never shows translated text.
+    const lang = document.getElementById('print-language').value;
+    if (lang === 'English') return;
+    const original = {
+        chiefComplaint: document.getElementById('chief-complaint').value,
+        hpi: document.getElementById('hpi').value,
+        primaryDiagnosis: document.getElementById('primary-diagnosis').value,
+        differentialDiagnosis: document.getElementById('differential-diagnosis').value,
+        advice: document.getElementById('advice').value,
+    };
+    try {
+        const res = await apiRequest('/translate', {
+            method: 'POST',
+            body: JSON.stringify({ ...original, medications: getMedications(), labTests: getLabTests(), target_language: lang })
+        });
+        if (!res.ok) return;
+        const translated = await res.json();
+        document.getElementById('chief-complaint').value = translated.chiefComplaint || original.chiefComplaint;
+        document.getElementById('hpi').value = translated.hpi || original.hpi;
+        document.getElementById('primary-diagnosis').value = translated.primaryDiagnosis || original.primaryDiagnosis;
+        document.getElementById('differential-diagnosis').value = translated.differentialDiagnosis || original.differentialDiagnosis;
+        document.getElementById('advice').value = translated.advice || original.advice;
+        updatePrintPreview();
+        document.getElementById('chief-complaint').value = original.chiefComplaint;
+        document.getElementById('hpi').value = original.hpi;
+        document.getElementById('primary-diagnosis').value = original.primaryDiagnosis;
+        document.getElementById('differential-diagnosis').value = original.differentialDiagnosis;
+        document.getElementById('advice').value = original.advice;
+    } catch(e) { console.error(e); }
 }
 
 function createPrintModal() {
@@ -646,10 +953,10 @@ function createPrintModal() {
     modal.className = 'modal';
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:none;align-items:center;justify-content:center;z-index:1000;';
     modal.innerHTML = `
-        <div style="background:#FFFFFF;border:1px solid #E6E7E2;border-radius:16px;padding:24px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;">
+        <div style="background:#FFFFFF;border:1px solid var(--line);border-radius:16px;padding:24px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                <h2 style="color:#1C2621;">🖨️ Prescription Preview</h2>
-                <button onclick="document.getElementById('print-modal').style.display='none'" style="background:none;border:none;color:#667169;font-size:24px;cursor:pointer;">&times;</button>
+                <h2 style="color:var(--ink-900);">🖨️ Prescription Preview</h2>
+                <button onclick="document.getElementById('print-modal').style.display='none'" style="background:none;border:none;color:var(--ink-500);font-size:24px;cursor:pointer;">&times;</button>
             </div>
             <div id="print-preview" style="background:white;color:black;padding:32px;border-radius:8px;min-height:400px;font-family:'Inter', -apple-system, sans-serif;"></div>
             <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
@@ -744,25 +1051,65 @@ function updatePrintPreview() {
     `;
 }
 
+// ---------------------------------------------------------------------------
+// History (search + real pagination against GET /api/consultations)
+// ---------------------------------------------------------------------------
+const HISTORY_PAGE_SIZE = 20;
+let historyOffset = 0;
+let historySearch = '';
+let historyTotal = 0;
+
+function statusBadge(finalized) {
+    return finalized ? '<span class="status-badge finalized">Finalized</span>' : '<span class="status-badge draft">Draft</span>';
+}
+
 async function loadConsultations() {
     try {
-        const res = await apiRequest('/consultations?limit=50');
+        const params = new URLSearchParams({ limit: HISTORY_PAGE_SIZE, offset: historyOffset });
+        if (historySearch) params.set('search', historySearch);
+        const res = await apiRequest(`/consultations?${params.toString()}`);
         if (res.ok) {
             const data = await res.json();
-            const container = document.getElementById('history-list');
+            historyTotal = data.total || 0;
+            const tbody = document.getElementById('history-list');
             if (!data.consultations || data.consultations.length === 0) {
-                container.innerHTML = '<p style="color:#93998F;">No consultations yet.</p>';
-                return;
+                tbody.innerHTML = '<tr><td colspan="6" style="color:var(--ink-400); text-align:center; padding:20px;">No consultations found.</td></tr>';
+            } else {
+                tbody.innerHTML = data.consultations.map(c => `
+                    <tr class="clickable" onclick="loadConsultation(${c.id})">
+                        <td style="font-weight:600;">${c.patient_name || 'Patient'}</td>
+                        <td>${c.chief_complaint || '—'}</td>
+                        <td>${c.primary_diagnosis || '—'}</td>
+                        <td style="color:var(--ink-500);">${currentUser ? currentUser.email : '—'}</td>
+                        <td style="color:var(--ink-500);">${new Date(c.created_at).toLocaleDateString()}</td>
+                        <td>${statusBadge(c.finalized)}</td>
+                    </tr>
+                `).join('');
             }
-            container.innerHTML = data.consultations.map(c => `
-                <div class="history-item" onclick="loadConsultation(${c.id})">
-                    <strong>${c.case_id}</strong> - ${new Date(c.created_at).toLocaleDateString()}
-                    <div style="color:#667169;">${c.chief_complaint || 'No complaint'} • ${c.medications_count} meds</div>
-                </div>
-            `).join('');
+            const from = historyTotal === 0 ? 0 : historyOffset + 1;
+            const to = Math.min(historyOffset + HISTORY_PAGE_SIZE, historyTotal);
+            document.getElementById('history-pager-label').textContent = `Showing ${from} to ${to} of ${historyTotal} consultations`;
+            document.getElementById('history-prev-btn').disabled = historyOffset === 0;
+            document.getElementById('history-next-btn').disabled = to >= historyTotal;
         }
     } catch(e) { console.error(e); }
 }
+
+document.getElementById('history-search').addEventListener('input', (e) => {
+    historySearch = e.target.value;
+    historyOffset = 0;
+    loadConsultations();
+});
+document.getElementById('history-prev-btn').addEventListener('click', () => {
+    historyOffset = Math.max(0, historyOffset - HISTORY_PAGE_SIZE);
+    loadConsultations();
+});
+document.getElementById('history-next-btn').addEventListener('click', () => {
+    if (historyOffset + HISTORY_PAGE_SIZE < historyTotal) {
+        historyOffset += HISTORY_PAGE_SIZE;
+        loadConsultations();
+    }
+});
 
 async function loadConsultation(id) {
     try {
@@ -775,35 +1122,70 @@ async function loadConsultation(id) {
             currentConsultationId = data.id || null;
             if (selectedPatientId) patientSelect.value = selectedPatientId;
             showView('scribe');
+            goToStep(2);
         }
     } catch(e) { console.error(e); }
 }
 
-async function loadMetrics() {
+// ---------------------------------------------------------------------------
+// Analytics (GET /api/consultations/analytics) -- aggregate metrics only, never the
+// AI provider/model name (that stays hidden from every surface, per product decision).
+// ---------------------------------------------------------------------------
+function renderTrendChart(containerId, data, key, color) {
+    const container = document.getElementById(containerId);
+    if (!data || data.length === 0) {
+        container.innerHTML = '<p style="color:var(--ink-400); font-size:12px;">No data yet.</p>';
+        return;
+    }
+    const w = 100, h = 40;
+    const values = data.map(d => d[key] || 0);
+    const max = Math.max(...values, 1);
+    const points = values.map((v, i) => {
+        const x = data.length > 1 ? (i / (data.length - 1)) * w : w / 2;
+        const y = h - (v / max) * h;
+        return `${x},${y}`;
+    }).join(' ');
+    container.innerHTML = `
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:160px;display:block;">
+            <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--ink-400);margin-top:4px;">
+            <span>${data[0].date}</span><span>${data[data.length-1].date}</span>
+        </div>
+    `;
+}
+
+async function loadAnalytics() {
     try {
-        const res = await apiRequest('/consultations?limit=100');
+        const res = await apiRequest('/consultations/analytics?days=30');
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById('total-cases').textContent = data.total_consultations;
+        document.getElementById('total-cases-foot').textContent = `Last ${data.period_days} days`;
+        document.getElementById('avg-latency').textContent = data.avg_latency != null ? `${data.avg_latency.toFixed(2)}s` : '—';
+        document.getElementById('avg-tokens').textContent = data.avg_tokens != null ? Math.round(data.avg_tokens) : '—';
+        renderTrendChart('chart-consult-trend', data.consultations_per_day, 'count', '#2F6F52');
+        renderTrendChart('chart-latency-trend', data.latency_trend, 'avg_latency', '#8A5B22');
+        renderTrendChart('chart-token-trend', data.token_usage_trend, 'total_tokens', '#C1694F');
+    } catch(e) { console.error(e); }
+
+    try {
+        const res = await apiRequest('/consultations?limit=20');
         if (res.ok) {
             const data = await res.json();
             const cons = data.consultations || [];
-            document.getElementById('total-cases').textContent = cons.length;
-            if (cons.length > 0) {
-                const avgLatency = cons.reduce((s,c) => s + (c.gemini_latency||0), 0) / cons.length;
-                document.getElementById('avg-latency').textContent = avgLatency.toFixed(2) + 's';
-                const avgTokens = cons.reduce((s,c) => s + (c.total_tokens||0), 0) / cons.length;
-                document.getElementById('avg-tokens').textContent = Math.round(avgTokens);
-            }
             const container = document.getElementById('case-logs');
             if (cons.length === 0) {
-                container.innerHTML = '<p style="color:#93998F;">No logs</p>';
+                container.innerHTML = '<p style="color:var(--ink-400);">No logs</p>';
                 return;
             }
             container.innerHTML = `
                 <table>
-                    <tr><th>Case</th><th>Date</th><th>Diagnosis</th><th>Meds</th><th>Latency</th></tr>
-                    ${cons.slice(0,20).map(c => `
-                        <tr><td>${c.case_id}</td><td>${new Date(c.created_at).toLocaleDateString()}</td>
+                    <tr><th>Patient</th><th>Date</th><th>Diagnosis</th><th>Meds</th><th>Latency</th><th>Status</th></tr>
+                    ${cons.map(c => `
+                        <tr><td>${c.patient_name || 'Patient'}</td><td>${new Date(c.created_at).toLocaleDateString()}</td>
                         <td>${c.primary_diagnosis || '—'}</td><td>${c.medications_count}</td>
-                        <td>${(c.gemini_latency||0).toFixed(2)}s</td></tr>
+                        <td>${(c.gemini_latency||0).toFixed(2)}s</td><td>${statusBadge(c.finalized)}</td></tr>
                     `).join('')}
                 </table>
             `;
@@ -821,7 +1203,7 @@ document.querySelectorAll('.sidebar button').forEach(b => {
         const view = b.dataset.view;
         showView(view);
         if (view === 'history') loadConsultations();
-        else if (view === 'observability') loadMetrics();
+        else if (view === 'observability') { checkGroqStatus(); loadAnalytics(); }
     });
 });
 

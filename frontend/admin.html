@@ -125,7 +125,8 @@ async function verifyAdmin() {
             if (data.user.role !== 'Admin') {
                 const role = data.user.role;
                 if (role === 'Doctor') window.location.href = '/opd.html';
-                else if (role === 'HeadNurse' || role === 'Nurse' || role === 'NursingStation') window.location.href = '/ipd.html';
+                else if (role === 'HeadNurse') window.location.href = '/headnurse.html';
+                else if (role === 'Nurse' || role === 'NursingStation') window.location.href = '/ipd.html';
                 else window.location.href = '/opd.html';
             }
         } else {

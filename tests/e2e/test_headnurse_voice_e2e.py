@@ -29,7 +29,7 @@ def unassigned_patient(make_user, db_session):
 def _open_consult(js_page, live_server_url, user, patient):
     tokens = mint_tokens(user)
     set_tokens_in_browser(js_page, live_server_url, tokens["access_token"], tokens["refresh_token"])
-    js_page.goto(f"{live_server_url}/ipd.html")
+    js_page.goto(f"{live_server_url}/headnurse.html")
     js_page.wait_for_timeout(300)
     js_page.evaluate(f"openNursingConsult({patient.id})")
     js_page.wait_for_timeout(200)
@@ -39,7 +39,7 @@ def test_headnurse_sees_nursing_notes_action_button(js_page, live_server_url, un
     head_nurse, patient = unassigned_patient
     tokens = mint_tokens(head_nurse)
     set_tokens_in_browser(js_page, live_server_url, tokens["access_token"], tokens["refresh_token"])
-    js_page.goto(f"{live_server_url}/ipd.html")
+    js_page.goto(f"{live_server_url}/headnurse.html")
     js_page.wait_for_timeout(300)
     js_page.evaluate(f"showPatientDetail({patient.id})")
     js_page.wait_for_timeout(300)

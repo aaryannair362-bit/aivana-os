@@ -1,8 +1,9 @@
 """
-Real-browser end-to-end coverage of the HeadNurse role in frontend/ipd.html. Specifically
-regression-tests two UI-only bugs found by auditing every role-gated element against the
-backend's actual permission rules (a backend-only test suite structurally cannot see these --
-the backend always allowed both actions, but the button that triggers them was hidden):
+Real-browser end-to-end coverage of the HeadNurse role on its own dedicated page,
+frontend/headnurse.html. Specifically regression-tests two UI-only bugs found by auditing every
+role-gated element against the backend's actual permission rules (a backend-only test suite
+structurally cannot see these -- the backend always allowed both actions, but the button that
+triggers them was hidden):
 
 1. The "Admit Patient" button was only ever shown for NursingStation, even though
    POST /api/ipd/patients has always allowed HeadNurse too -- a head nurse had no UI path to
@@ -11,8 +12,9 @@ the backend always allowed both actions, but the button that triggers them was h
    PATCH /api/ipd/tasks/{id} has always allowed HeadNurse to update ANY task -- a head nurse
    who created a task had no UI path to complete it themselves.
 
-Also covers the new HeadNurse convenience features added this pass: the ward summary stat bar,
-nurse-workload visibility in the assign dropdown, and the unassign action.
+Also covers HeadNurse's own dashboard (real KPI tiles from GET /api/ipd/dashboard-summary,
+replacing frontend/ipd.html's old ward-summary stat bar now that HeadNurse has moved off that
+page), nurse-workload visibility in the assign dropdown, and the unassign action.
 """
 import pytest
 
@@ -44,12 +46,12 @@ def ward_setup(make_user, db_session):
 def _login(js_page, live_server_url, user):
     tokens = mint_tokens(user)
     set_tokens_in_browser(js_page, live_server_url, tokens["access_token"], tokens["refresh_token"])
-    js_page.goto(f"{live_server_url}/ipd.html")
+    js_page.goto(f"{live_server_url}/headnurse.html")
     js_page.wait_for_timeout(300)
 
 
 def test_headnurse_sees_admit_patient_button(js_page, live_server_url, ward_setup):
-    """Regression test for the admit-button visibility bug (fixed this pass)."""
+    """Regression test for the admit-button visibility bug (fixed in an earlier pass)."""
     head_nurse, nurse, patient, task = ward_setup
     _login(js_page, live_server_url, head_nurse)
     js_page.click("button[data-view='patients']")
@@ -79,7 +81,7 @@ def test_headnurse_can_admit_a_patient_through_the_ui(js_page, live_server_url, 
 
 
 def test_headnurse_sees_mark_complete_on_any_nurses_task_in_patient_detail(js_page, live_server_url, ward_setup):
-    """Regression test for the Mark Complete visibility bug (fixed this pass) -- in the
+    """Regression test for the Mark Complete visibility bug (fixed in an earlier pass) -- in the
     patient-detail Tasks tab."""
     head_nurse, nurse, patient, task = ward_setup
     _login(js_page, live_server_url, head_nurse)
@@ -122,32 +124,22 @@ def test_headnurse_sees_mark_complete_in_global_tasks_view(js_page, live_server_
     assert js_page.js_errors == []
 
 
-def test_headnurse_sees_ward_summary_stat_bar_on_dashboard(js_page, live_server_url, ward_setup):
+def test_headnurse_dashboard_kpi_tiles_reflect_real_counts(js_page, live_server_url, ward_setup):
+    """The dashboard KPI tiles (from GET /api/ipd/dashboard-summary) replace frontend/ipd.html's
+    old ward-summary stat bar now that HeadNurse has its own page -- confirms they're wired to
+    real numbers, not the reference mockup's hardcoded-and-disconnected values."""
     head_nurse, nurse, patient, task = ward_setup
     _login(js_page, live_server_url, head_nurse)
-    summary = js_page.locator("#ward-summary")
-    assert summary.is_visible()
-    text = summary.inner_text().lower()  # .stat-label has text-transform: uppercase applied
-    assert "patients" in text
-    assert "unassigned" in text
-    assert "abnormal vitals" in text
-    assert "overdue tasks" in text
+    assert js_page.locator("#kpi-total-patients").inner_text() == "1"
+    assert js_page.locator("#kpi-assigned-patients").inner_text() == "1"
+    assert js_page.locator("#kpi-pending-tasks").inner_text() == "1"
+    assert js_page.locator("#kpi-completed-tasks").inner_text() == "0"
     assert js_page.js_errors == []
 
 
-def test_nurse_role_does_not_see_ward_summary(js_page, live_server_url, ward_setup):
-    """The ward summary is ward-wide (HeadNurse/NursingStation/Doctor); a Nurse's dashboard
-    only shows their own handful of patients, where a "ward" summary would be misleading."""
-    head_nurse, nurse, patient, task = ward_setup
-    _login(js_page, live_server_url, nurse)
-    summary = js_page.locator("#ward-summary")
-    assert not summary.is_visible()
-
-
-def test_ward_summary_reflects_unassigned_patient_count(js_page, live_server_url, ward_setup):
+def test_dashboard_kpis_update_after_admitting_an_unassigned_patient(js_page, live_server_url, ward_setup):
     head_nurse, nurse, patient, task = ward_setup
     _login(js_page, live_server_url, head_nurse)
-    # Admit a second, unassigned patient via the real UI flow to move the count off zero.
     js_page.click("button[data-view='patients']")
     js_page.wait_for_timeout(150)
     js_page.click("#show-admit-btn")
@@ -158,8 +150,10 @@ def test_ward_summary_reflects_unassigned_patient_count(js_page, live_server_url
     js_page.wait_for_timeout(300)
     js_page.click("button[data-view='dashboard']")
     js_page.wait_for_timeout(300)
-    summary_text = js_page.locator("#ward-summary").inner_text()
-    assert "1" in summary_text  # exactly one unassigned patient now (the newly admitted one)
+    # Total patients grows to 2 (the fixture's assigned patient + the newly admitted unassigned
+    # one); assigned_patients stays at 1 since the new patient has no nurse.
+    assert js_page.locator("#kpi-total-patients").inner_text() == "2"
+    assert js_page.locator("#kpi-assigned-patients").inner_text() == "1"
 
 
 def test_headnurse_sees_nurse_workload_in_assign_dropdown(js_page, live_server_url, ward_setup):
@@ -222,8 +216,8 @@ def test_unassign_button_not_shown_when_no_nurse_assigned(js_page, live_server_u
 
 
 def test_headnurse_discharge_still_works_alongside_new_features(js_page, live_server_url, ward_setup):
-    """Regression check that the discharge action (added in the prior pass) still coexists
-    correctly with the new Unassign button in the same action row."""
+    """Regression check that the discharge action (added in an earlier pass) still coexists
+    correctly with the Unassign button in the same action row."""
     head_nurse, nurse, patient, task = ward_setup
     _login(js_page, live_server_url, head_nurse)
     js_page.evaluate(f"showPatientDetail({patient.id})")
@@ -234,16 +228,17 @@ def test_headnurse_discharge_still_works_alongside_new_features(js_page, live_se
 
 
 def test_full_headnurse_ui_session_no_console_errors(js_page, live_server_url, ward_setup):
-    """Broad smoke pass: click through every major HeadNurse view in one session and confirm
-    zero uncaught JS errors anywhere, the class of bug a backend-only suite can't see."""
+    """Broad smoke pass: click through every HeadNurse sidebar view (Dashboard/Patients/Assign/
+    Tasks/Calendar/Reports) and every patient-drawer tab in one session, confirm zero uncaught
+    JS errors anywhere -- the class of bug a backend-only suite can't see."""
     head_nurse, nurse, patient, task = ward_setup
     _login(js_page, live_server_url, head_nurse)
-    for view in ["dashboard", "patients", "assign", "tasks"]:
+    for view in ["dashboard", "patients", "assign", "tasks", "calendar", "reports"]:
         js_page.click(f"button[data-view='{view}']")
         js_page.wait_for_timeout(250)
     js_page.evaluate(f"showPatientDetail({patient.id})")
     js_page.wait_for_timeout(300)
-    for tab in ["vitals-tab", "tasks-tab", "consultations-tab", "nursing-tab"]:
+    for tab in ["overview-tab", "vitals-tab", "medication-tab", "tasks-tab", "nursing-tab", "discharge-summary-tab"]:
         js_page.click(f".tab-btn[data-tab='{tab}']")
         js_page.wait_for_timeout(150)
     assert js_page.js_errors == []

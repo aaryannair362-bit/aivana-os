@@ -122,17 +122,19 @@ def test_station_admit_empty_string_ward_rejected(client, station, auth_headers)
     assert resp.status_code == 400
 
 
-def test_station_admit_negative_age_accepted_without_validation(client, station, auth_headers):
-    """Documents the same pre-existing no-physiological-validation gap noted for HeadNurse
-    admission (test_admission_scenarios.py) -- consistent regardless of who admits."""
-    pid = _admit(client, auth_headers, station, age=-3)
-    details = client.get(f"/api/patients/{pid}/details", headers=auth_headers(station)).json()
-    assert details["patient"]["age"] == -3
+def test_station_admit_negative_age_rejected(client, station, auth_headers):
+    """age validation (0 <= age <= 130) applies regardless of who admits -- consistent with
+    HeadNurse admission (test_admission_scenarios.py)."""
+    resp = client.post("/api/ipd/patients", json={"name": "NS Admit Patient", "ward": "General", "bed": "1", "age": -3},
+                        headers=auth_headers(station))
+    assert resp.status_code == 400
 
 
 def test_two_patients_same_name_different_beds_both_admitted_successfully(client, station, auth_headers):
+    """The duplicate-name gate applies regardless of who admits -- the second submission must
+    resubmit with confirm_duplicate=true to proceed (see test_ipd_admit_validation.py)."""
     id1 = _admit(client, auth_headers, station, name="Common Name", bed="1")
-    id2 = _admit(client, auth_headers, station, name="Common Name", bed="2")
+    id2 = _admit(client, auth_headers, station, name="Common Name", bed="2", confirm_duplicate=True)
     assert id1 != id2
 
 

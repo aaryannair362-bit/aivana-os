@@ -171,12 +171,12 @@ def test_full_station_ui_session_no_console_errors(js_page, live_server_url, war
     """Broad smoke pass across every view NursingStation has access to."""
     station, head_nurse, nurse, patient = ward_setup
     _login(js_page, live_server_url, station)
-    for view in ["dashboard", "patients"]:
+    for view in ["dashboard", "alerts", "patients"]:
         js_page.click(f"button[data-view='{view}']")
         js_page.wait_for_timeout(250)
     js_page.evaluate(f"showPatientDetail({patient.id})")
     js_page.wait_for_timeout(300)
-    for tab in ["vitals-tab", "tasks-tab", "consultations-tab", "nursing-tab"]:
+    for tab in ["overview-tab", "vitals-tab", "medication-tab", "tasks-tab", "nursing-tab", "discharge-summary-tab"]:
         js_page.click(f".tab-btn[data-tab='{tab}']")
         js_page.wait_for_timeout(150)
     assert js_page.js_errors == []

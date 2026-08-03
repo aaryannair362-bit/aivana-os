@@ -30,18 +30,38 @@ imports `backend.app.main:app` directly — not a hand-maintained duplicate.
 - `backend/app/main.py` — FastAPI app, all routes, DB session wiring, default-admin bootstrap,
   and static serving of `frontend/**`. This is the only server entry point.
 - `frontend/*.html` — static, vanilla-JS pages (no build step), served by FastAPI's
-  `StaticFiles` mount in `backend/app/main.py`:
-  - `index.html` — login/landing.
-  - `admin.html` — org/user administration.
-  - `opd.html` — outpatient workflow: voice/text transcript → AI scribe → structured
-    prescription draft → save as `Consultation`.
-  - `ipd.html` — inpatient workflow: patient admission, nurse assignment, vitals, tasks,
-    nursing notes. **HTML ids must stay unique within this file**: until fixed 2026-08-01, the
-    sidebar's "Tasks" nav button and the patient-detail modal's Tasks tab-content `<div>` both
-    used `id="tasks-tab"`, and `getElementById` silently resolved every lookup to the first
-    (sidebar) element — permanently breaking the modal's Tasks tab for every role, with no
-    error ever thrown. See CHANGELOG.md's 2026-08-01 entry. The sidebar nav button is now
-    `id="tasks-nav-btn"`.
+  `StaticFiles` mount (`/static`, for non-`.html` assets like `frontend/js/ipd-shared.js`) plus
+  a `GET /{filename}.html` catch-all in `backend/app/main.py` (so `opd.html` etc. resolve at
+  root, e.g. `/opd.html`, not `/static/opd.html`):
+  - `index.html` — login/landing. Post-login redirect: `Doctor` → `opd.html`, `HeadNurse` →
+    `headnurse.html`, `Nurse`/`NursingStation` → `ipd.html`, `Admin` → `admin.html`.
+  - `admin.html` — org/user administration; mirrors the same role-redirect for a non-Admin who
+    lands here. Also hosts the medicine/lab-test custom-data admin UI (2026-08-03 pass).
+  - `opd.html` — outpatient workflow, restructured 2026-08-03 into a step wizard (Setup ->
+    Transcript -> Clinical Note -> Interactions -> Prescription) wrapped around the same real
+    pipeline: voice/text transcript → AI scribe → structured prescription draft → save as
+    `Consultation`. `#patient-select` stays the real state-holder behind a patient-card grid,
+    kept non-`display:none` (a 1x1px visually-hidden pattern) since several e2e tests drive it
+    directly via Playwright's `select_option()`, which requires a non-zero-bounding-box element.
+  - `ipd.html` — inpatient workflow for `Nurse`/`NursingStation` (and Doctor's ward-round modal):
+    patient admission, vitals, tasks, nursing notes. Restructured 2026-08-03: the patient-detail
+    modal is now a slide-out right-side drawer (CSS only) with 6 tabs (Overview/Vitals/
+    Medication/Tasks/Nursing Notes/Discharge Summary), plus a new Alerts view and a Task
+    List/Kanban toggle. HeadNurse-only features (Assign view, Create-Task modal, Unassign
+    button) were removed from this file in the same pass — see `headnurse.html` below.
+    **HTML ids must stay unique within this file**: until fixed 2026-08-01, the sidebar's
+    "Tasks" nav button and the patient-detail modal's Tasks tab-content `<div>` both used
+    `id="tasks-tab"`, and `getElementById` silently resolved every lookup to the first (sidebar)
+    element — permanently breaking the modal's Tasks tab for every role, with no error ever
+    thrown. The sidebar nav button is now `id="tasks-nav-btn"`.
+  - `headnurse.html` (new, 2026-08-03) — HeadNurse's own dedicated page (previously only
+    role-gated sections inside `ipd.html`). Sidebar: Dashboard (real KPI tiles from
+    `GET /api/ipd/dashboard-summary`) / Patients / Assign / Tasks / Calendar (editable weekly
+    shift grid, `GET`/`PUT /api/ipd/shifts`) / Reports (`GET /api/ipd/reports` charts). Shares
+    `frontend/js/ipd-shared.js` with `ipd.html` for the stateless utility layer
+    (`apiRequest`/`closeModal`/`taskTypeBadge`); the patient-drawer/admit/task-modal logic is
+    intentionally duplicated between the two files rather than abstracted, since it's too
+    stateful to share safely without a real module system (no build step in this project).
 
 ## 3. Core modules (backend/app)
 
@@ -51,8 +71,12 @@ imports `backend.app.main:app` directly — not a hand-maintained duplicate.
   expiry, `GROQ_API_KEY`, `GROQ_MODEL`.
 - **`models.py`** — SQLAlchemy declarative models: `Organization`, `User`, `AuditLog`,
   `PasswordHistory`, `Consultation`, `Patient`, `NurseAssignment`, `Vital`, `Task`,
-  `NursingNote`, `DischargeSummary` (added 2026-08-01 — see section 5). No `ON DELETE`/cascade
-  rules defined. `Consultation.patient_id` is a foreign
+  `NursingNote`, `DischargeSummary` (added 2026-08-01 — see section 5), `Ward` and `NurseShift`
+  (added 2026-08-03 — see section 5). Also present but not covered by this document: a
+  `Drug`/`DrugBatch`/`DispensingRecord`/`ControlledDrugRegisterEntry` pharmacy inventory group,
+  predating this document's most recent update — verify current wiring against `main.py` before
+  relying on any assumption about its behavior. No `ON DELETE`/cascade rules defined.
+  `Consultation.patient_id` is a foreign
   key with no existence check (believed intentional OPD/IPD decoupling, see TEST_NOTES.md
   section 8). `Vital`/`Task`/`NursingNote`/`NurseAssignment`'s `patient_id` **is now validated**
   in every `main.py` endpoint that creates or reads them — each first loads the `Patient` row
@@ -210,16 +234,36 @@ data (`record_vital`, `create_task`, `update_task`, `create_nursing_note`, `nurs
   they didn't. See CHANGELOG.md for the full story.
 - **"Abnormal" vital flagging** (`GET /api/ipd/patients`): a patient's latest vital is flagged
   abnormal if `bp_systolic > 140` OR `bp_diastolic > 90` OR `heart_rate > 100` OR
-  `temperature > 38` (Celsius assumed, unvalidated — nothing stops a Fahrenheit value like
+  `heart_rate < 60` OR `temperature > 38` OR `oxygen_sat < 92`
+  (Celsius assumed, unvalidated — nothing stops a Fahrenheit value like
   `98.6` from being stored and silently read as "normal" under the 38 threshold, or a genuinely
   high Fahrenheit temp like `102` being flagged even though the threshold is Celsius-calibrated
   — **no units field exists on `Vital`**, this is a real correctness risk for a clinical system
   and is covered in TEST_NOTES.md rather than silently "fixed" by guessing an intended unit).
-  Thresholds use strict `>`, i.e. exactly `140/90/100/38.0` are **not** flagged — boundary
-  behavior is tested explicitly. **`oxygen_sat` is never checked at all, and `heart_rate` has
-  no low threshold** — a dangerously low SpO2 or severe bradycardia is silently "normal" on the
-  dashboard. Discovered and documented (not fixed — a clinical scoring decision) this pass; see
-  TEST_NOTES.md section 10.
+  Thresholds use strict inequalities, i.e. exactly `140/90/100/60/38.0/92` are **not** flagged —
+  boundary behavior is tested explicitly. `oxygen_sat < 92` and `heart_rate < 60` were added to
+  close a real patient-safety gap (a dangerously low SpO2 or severe bradycardia used to be
+  silently "normal" on the dashboard) — see TEST_NOTES.md section 10 for the standard-textbook
+  thresholds used and the still-open recommendation to get clinical sign-off on a full
+  NEWS2/MEWS-style weighted score rather than these single-vital cutoffs.
+
+- **Ward capacity, nurse shifts, alerts, reports (added 2026-08-03)**: `Ward` is a per-org
+  `(name, bed_capacity)` row, matched case-insensitively against the existing free-text
+  `Patient.ward` — no FK, no `Bed` entity, so an org with no `Ward` rows configured keeps
+  admitting normally (the capacity check in `create_ipd_patient` is simply skipped). Occupancy
+  is always a live `COUNT` of `Active` patients matching that ward name, never a stored/cached
+  number. `POST /api/ipd/patients` also now validates age (`0 <= age <= 130`) and rejects a
+  same-ward same-bed-string conflict, and gates a case-insensitive duplicate-*active*-name match
+  behind a `confirm_duplicate: true` resubmit (409 on the first attempt) rather than hard-
+  blocking a genuinely different same-named patient forever. `GET/PUT /api/ipd/shifts`
+  (HeadNurse-only) is a real, editable per-org nurse x date shift grid (`NurseShift`, unique on
+  `(nurse_id, shift_date)`, `shift_type` one of `Morning|Evening|Night|Off`). `GET
+  /api/ipd/alerts` reuses the exact same roster-building helpers `GET /api/ipd/patients` already
+  uses (`_resolve_ipd_patients_for_role`/`_build_ipd_roster`) to flatten abnormal-vitals/overdue-
+  task entries into one paginated feed, so the two views can never silently disagree. `GET
+  /api/ipd/reports`/`GET /api/ipd/dashboard-summary` (HeadNurse-only) are real aggregates over
+  `Task`/`Patient` rows — diagnosis distribution is top-N *raw* `Patient.diagnosis` strings by
+  count, not a fixed invented taxonomy, since that field is free text with no real categories.
 
 ## 6. Auth & session model
 
@@ -233,9 +277,16 @@ anywhere in the app; flagged, not fixed, since adding rate limiting is a scope d
 ## 7. Testing status
 
 Before the first test-writing pass: zero automated tests, no test framework configured, no CI.
-Everything in `tests/` was authored across eight passes; see `TEST_NOTES.md` for coverage
+Everything in `tests/` was authored across nine passes; see `TEST_NOTES.md` for coverage
 scope, ambiguities, and the LLM-nondeterminism boundary, and `CHANGELOG.md` for the
-chronological log of fixes. Current status: 1309 tests, up from 144 before 2026-07-31's
+chronological log of fixes. Current status: **1566 tests collected** (`pytest --collect-only
+-q`), up from 1309 before the 2026-08-03 pass (medicine/lab-test correction, frontend visual
+refresh, and the 4-phase OPD/IPD/HeadNurse rebuild covered in that date's CHANGELOG.md entry —
+new files include `tests/integration/test_ward_capacity_management.py`,
+`test_nurse_shift_scheduling.py`, `test_ipd_reports_and_dashboard_summary.py`,
+`test_ipd_alerts_endpoint.py`, `test_ipd_admit_validation.py`,
+`test_consultations_search_pagination_and_analytics.py`, plus 25 new
+`test_role_permission_matrix.py` cases), up from 144 before 2026-07-31's
 two-part ward-workflow pass (~250 general ward-scenario cases, then ~214 more specifically
 targeting the voice-based nurse features), up from 611 before 2026-08-01's dedicated HeadNurse
 pass (~237 more), up from 848 before that same day's dedicated NursingStation pass (~219 more),

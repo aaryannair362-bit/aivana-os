@@ -292,6 +292,10 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
         f"expected a clean interaction check for Zanocin/Calpol/Electral, got: {interaction_text!r}"
     )
 
+    # Wizard navigation: Clinical Note -> Interactions -> Prescription, where Finalize/Print live.
+    doctor_page.click("#continue-to-interactions-btn")
+    doctor_page.click("#continue-to-prescription-btn")
+
     doctor_page.click("#finalize-btn")
     doctor_page.wait_for_function(
         "document.querySelector('#analysis-status').textContent.includes('Finalized') || "
@@ -518,10 +522,13 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
         db_task.close()
 
     # ================= Step 7: AI discharge summary =================
+    # HeadNurse now lands on its own dedicated page (frontend/headnurse.html) rather than
+    # frontend/ipd.html -- the patient drawer/discharge-summary/print-preview markup and
+    # functions there are the same ones ipd.html already had, ported verbatim.
     head_nurse_page = _new_actor_page(context)
     _login(head_nurse_page, live_server_url, head_nurse)
-    head_nurse_page.goto(f"{live_server_url}/ipd.html")
-    head_nurse_page.wait_for_function("document.querySelectorAll('.patient-card').length > 0", timeout=20000)
+    head_nurse_page.goto(f"{live_server_url}/headnurse.html")
+    head_nurse_page.wait_for_function("typeof currentUser !== 'undefined' && currentUser !== null", timeout=20000)
     head_nurse_page.evaluate(f"showPatientDetail({patient_id})")
     head_nurse_page.wait_for_selector("#patient-detail-modal[style*='flex']", timeout=10000)
     head_nurse_page.click(".tab-btn[data-tab='discharge-summary-tab']")

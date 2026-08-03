@@ -22,6 +22,7 @@ ADDITIVE_COLUMNS = [
     ("tasks", "task_type", "VARCHAR(20) DEFAULT 'General'"),
     ("tasks", "source", "VARCHAR(20) DEFAULT 'Manual'"),
     ("tasks", "consultation_id", "INTEGER"),
+    ("consultations", "finalized_at", "TIMESTAMP"),
 ]
 
 

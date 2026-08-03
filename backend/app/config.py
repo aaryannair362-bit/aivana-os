@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     # GROQ_API_KEY directly so the original key stays available/documented as a fallback.
     GROQ_API_KEY_Prod: str = os.getenv("GROQ_API_KEY_Prod", "")
     GROQ_MODEL: str = "qwen/qwen3.6-27b"
+    # Comma-separated list of origins allowed to call the API. The frontend is same-origin
+    # (served by this same FastAPI process, API_BASE = '/api'), so this only matters for local
+    # dev on a different port/live-server and any future separately-hosted frontend.
+    ALLOWED_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
+    # Disabled in tests (tests/conftest.py, tests/scale/runner.py) -- many legitimate tests
+    # fire dozens of auth calls from the same test-client "IP" in well under a minute.
+    RATE_LIMIT_ENABLED: bool = True
 
     class Config:
         env_file = ".env"
@@ -22,3 +29,12 @@ settings = Settings()
 # exist.
 if settings.GROQ_API_KEY_Prod:
     settings.GROQ_API_KEY = settings.GROQ_API_KEY_Prod
+
+_INSECURE_DEFAULT_SECRET_KEY = "your-super-secret-key-change-this-in-production"
+if settings.SECRET_KEY == _INSECURE_DEFAULT_SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY is still the well-known FastAPI tutorial default. Anyone who knows this "
+        "value can forge a valid JWT for any user/role. Set a real random SECRET_KEY in "
+        "backend/.env (e.g. `python -c \"import secrets; print(secrets.token_hex(32))\"`) or "
+        "the SECRET_KEY environment variable before starting the app."
+    )

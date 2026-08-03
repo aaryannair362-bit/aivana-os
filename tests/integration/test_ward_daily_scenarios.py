@@ -97,8 +97,8 @@ def test_multiple_wards_in_same_organization_are_all_visible_to_head_nurse(clien
 
 def test_unassigned_patients_are_flagged_for_head_nurse_attention(client, head_nurse, make_user, auth_headers):
     nurse = make_user(email="only-one-assigned@daily-ward.com", role="Nurse", organization_id=head_nurse.organization_id)
-    assigned = _admit(client, auth_headers, head_nurse, name="Assigned One")
-    unassigned = _admit(client, auth_headers, head_nurse, name="Unassigned One")
+    assigned = _admit(client, auth_headers, head_nurse, name="Assigned One", bed="G1")
+    unassigned = _admit(client, auth_headers, head_nurse, name="Unassigned One", bed="G2")
     client.post("/api/ipd/assign", json={"patient_id": assigned, "nurse_id": nurse.id}, headers=auth_headers(head_nurse))
 
     roster = client.get("/api/ipd/patients", headers=auth_headers(head_nurse)).json()
@@ -121,9 +121,11 @@ def test_nurse_sees_only_currently_assigned_patients_not_historical(client, head
 
 
 def test_same_patient_name_different_beds_are_distinct_patients(client, head_nurse, auth_headers):
-    """Common in real wards -- two patients can share a name. Ward+bed, not name, disambiguates."""
+    """Common in real wards -- two patients can share a name. Ward+bed, not name, disambiguates.
+    The second admission hits the duplicate-name confirmation gate first (by design, so a typo'd
+    re-admission isn't silently duplicated) and must resubmit with confirm_duplicate=true."""
     id1 = _admit(client, auth_headers, head_nurse, name="Priya Sharma", ward="ICU", bed="1")
-    id2 = _admit(client, auth_headers, head_nurse, name="Priya Sharma", ward="ICU", bed="2")
+    id2 = _admit(client, auth_headers, head_nurse, name="Priya Sharma", ward="ICU", bed="2", confirm_duplicate=True)
     assert id1 != id2
     roster = client.get("/api/ipd/patients", headers=auth_headers(head_nurse)).json()
     matching = [p for p in roster if p["name"] == "Priya Sharma"]
@@ -189,32 +191,27 @@ def test_dashboard_flags_patient_who_just_became_abnormal(client, head_nurse, au
 
 
 # ---------------------------------------------------------------------------
-# Low-oxygen-saturation / bradycardia not flagged -- documented current-behavior gap.
-# The abnormal-vital rule only checks for values ABOVE a high threshold (BP/HR/temp); it has
-# no check at all for oxygen_sat, and no LOW threshold for heart_rate. A dangerously low SpO2
-# (e.g. 85%) or a bradycardic heart rate (e.g. 35) is silently treated as "normal". Unlike the
-# BP/temperature thresholds, SpO2 has no unit ambiguity (it's always a percentage), so this
-# looks like an overlooked field rather than a deliberate scope boundary -- flagged in
-# TEST_NOTES.md for product/clinical sign-off rather than guessed at with an invented cutoff.
+# Low-oxygen-saturation / bradycardia flagging -- these were a documented current-behavior gap
+# (the abnormal-vital rule only checked values ABOVE a high threshold for BP/HR/temp, with no
+# check at all for oxygen_sat and no LOW threshold for heart_rate). Fixed: heart_rate < 60 and
+# oxygen_sat < 92 now flag abnormal too (main.py get_ipd_patients).
 # ---------------------------------------------------------------------------
 
-def test_dangerously_low_oxygen_saturation_is_not_flagged_abnormal(client, head_nurse, auth_headers):
+def test_dangerously_low_oxygen_saturation_is_flagged_abnormal(client, head_nurse, auth_headers):
     pid = _admit(client, auth_headers, head_nurse, name="Hypoxic Patient")
     client.post("/api/ipd/vitals", json={"patient_id": pid, "oxygen_sat": 78}, headers=auth_headers(head_nurse))
     roster = client.get("/api/ipd/patients", headers=auth_headers(head_nurse)).json()
     p = next(p for p in roster if p["id"] == pid)
-    assert p["abnormal"] is False, (
-        "Documents a real gap: SpO2 is recorded but never checked by the abnormal-vital rule, "
-        "so a critically low reading (78%) raises no alert. See TEST_NOTES.md."
+    assert p["abnormal"] is True, (
+        "A critically low SpO2 reading (78%) must raise an abnormal alert on the ward dashboard."
     )
 
 
-def test_severe_bradycardia_is_not_flagged_abnormal(client, head_nurse, auth_headers):
+def test_severe_bradycardia_is_flagged_abnormal(client, head_nurse, auth_headers):
     pid = _admit(client, auth_headers, head_nurse, name="Bradycardic Patient")
     client.post("/api/ipd/vitals", json={"patient_id": pid, "heart_rate": 35}, headers=auth_headers(head_nurse))
     roster = client.get("/api/ipd/patients", headers=auth_headers(head_nurse)).json()
     p = next(p for p in roster if p["id"] == pid)
-    assert p["abnormal"] is False, (
-        "Documents a real gap: the abnormal-vital rule only checks heart_rate > 100, never a "
-        "low bound, so severe bradycardia (35 bpm) raises no alert. See TEST_NOTES.md."
+    assert p["abnormal"] is True, (
+        "Severe bradycardia (35 bpm) must raise an abnormal alert on the ward dashboard."
     )

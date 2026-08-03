@@ -3,6 +3,176 @@
 Chronological log of test-suite and bug-fix work. See ARCHITECTURE_NOTES.md for the codebase
 map and TEST_NOTES.md for ambiguities/gaps that were deliberately documented rather than fixed.
 
+## 2026-08-03 pass: medicine/lab-test name correction + custom-data admin UI, frontend visual
+## refresh, and a 4-phase OPD/IPD/HeadNurse rebuild matching 3 supplied reference designs
+
+Three requests handled back to back: (1) fuzzy-correct AI-extracted medicine and lab-test names
+against real reference datasets instead of trusting the model's spelling verbatim; (2) a visual
+refresh of all three frontend pages plus a small login-page touch-up; (3) a full rebuild of the
+OPD/IPD/HeadNurse frontends to match the layout and feature set of three supplied reference
+designs (`AIVANA_OPDScribe.html`, `AIVANA_IPDNurse.html`, `AIVANA_HeadNurse.html`), while
+preserving the doctor's real voice-transcript pipeline and the nurse's real vitals pipeline
+exactly as they were, and building every genuinely-new concept (ward capacity, nurse shift
+scheduling, reports aggregation) for real rather than as reference-fidelity mock data.
+
+### Added -- medicine and lab-test name correction (`backend/app/drug_matcher.py`,
+### `backend/app/lab_test_matcher.py`)
+
+Both run inside `scribe.scribe_transcript()` (medications + labTests) and the IPD
+`nurse_consult` endpoint (labs), correcting AI-extracted names against real reference datasets
+(a ~249k-name Indian medicines list; the supplied `IPD_Lab_Master_Starter` Test Name/Common
+Alias columns) via `rapidfuzz`.
+
+- **Drug matcher**: only corrects a `drugName` when it explicitly states a pharmaceutical
+  form/route (e.g. "Tablet Zanocin") -- bare generic names are never touched. This gate exists
+  because two real bug classes were found and are provably unsolvable by threshold-tuning
+  alone: form/route swaps on bare names (e.g. "Diclofenac Gel" incorrectly corrected to
+  "Dicofenac Injection") and look-alike-sound-alike collisions scoring in the same range as
+  genuine typo fixes (e.g. "Diclofenac"->"Dicofenac", "Azithromycin"->"Zithromycin").
+- **Lab test matcher**: exact alias/name lookup first; fuzzy fallback (`fuzz.WRatio`) only for
+  non-exact matches, excluding short candidates (<5 chars normalized) from the fuzzy pool to
+  prevent `partial_ratio` false positives (e.g. "HBV DNA"->"Hemoglobin" via the "Hb" substring,
+  "Fasting Blood Sugar"->"Antibiotic Sensitivity Testing" via "ast" embedded in "fASTing").
+- **Custom-addition system**: `backend/app/data/custom_medicines.csv` /
+  `custom_lab_tests.csv`, editable via new Admin-only `POST/GET/DELETE /api/admin/medicines`
+  and `/api/admin/lab-tests`, surfaced as a "Medicine List"/"Lab Test List" section in
+  `frontend/admin.html` -- the raw Excel/PDF reference sources are cumbersome to hand-edit, so
+  gaps in the dataset can now be added directly through the app instead.
+
+### Changed -- frontend visual refresh (all four pages)
+
+Mechanical color/font swap across `index.html`/`opd.html`/`ipd.html`/`admin.html`: sage green
+(`#2F6F52`/`#234E39`) primary, clay/terracotta (`#C1694F`) danger, amber (`#8A5B22`) warning,
+cream (`#FBFAF7`/`#F3F2EE`/`#FFFFFF`) backgrounds, Fraunces serif + Inter sans + IBM Plex Mono
+fonts. No structural/id/JS changes in this pass -- see the rebuild below for the structural
+work. Also: the OPD page no longer shows which AI model/provider is powering it anywhere in the
+UI (was `✅ Groq: llama-3.1-8b-instant`); every new Analytics/Reports surface built afterward
+carries the same rule forward (aggregate latency/token metrics and a connectivity boolean only,
+never a model name).
+
+### Fixed -- stale-frontend caching
+
+`serve_index()`/`serve_html()` (`backend/app/main.py`) returned `FileResponse` with no
+`Cache-Control` header, so browsers fell back to heuristic caching and kept serving a stale
+cached copy of `opd.html`/`ipd.html`/etc. indefinitely after a deploy, with no revalidation, even
+though the new file was live on the server the whole time -- surfaced when the visual refresh
+above appeared to "not take" for a returning user. Fixed by adding
+`Cache-Control: no-cache, must-revalidate` (not `no-store`, so a revalidated cached copy is still
+usable) to every served frontend page.
+
+### Added -- Phase 1: backend foundation for the OPD/IPD/HeadNurse rebuild
+
+New models (`backend/app/models.py`): `Ward` (per-org bed-capacity config, matched
+case-insensitively against the existing free-text `Patient.ward` -- no FK, no `Bed` entity, so
+no backfill is needed and admission still works normally for any org with no wards configured
+yet) and `NurseShift` (per-org nurse x date shift assignment, unique on `(nurse_id,
+shift_date)`). One additive migration column: `consultations.finalized_at`, set the first time
+`PATCH /api/consultations/{id}/finalize` is called, giving the OPD History view's Draft/
+Finalized status real backing data.
+
+New/extended endpoints (`backend/app/main.py`), all through the existing
+`is_admin`/`is_head_nurse`/`is_nursing_station`/`is_nurse`/`is_doctor` + org-scoping + `log_audit`
+conventions:
+
+- `GET /api/consultations` gains `search`/`offset`/a capped `limit`, and `total`/`finalized` in
+  the response, for a real search + pager in OPD History.
+- `GET /api/consultations/analytics?days=30` (Doctor-only, per-doctor scoped): consultations-
+  per-day, latency trend, token-usage trend, period totals -- from columns every real
+  `POST /api/scribe` call already populates. Deliberately no "success rate" (a failed Groq call
+  never commits a row, so it isn't derivable) and no model/provider name. Must be registered
+  *before* `GET /api/consultations/{id}` in route order, or FastAPI's `{id}: int` coercion
+  greedily 422s on the literal path segment "analytics" before ever reaching this handler.
+- `GET/POST/PATCH/DELETE /api/wards` (HeadNurse/Admin): capacity CRUD with computed live
+  occupancy (a COUNT query, not a stored/cached number, so it can never drift).
+- `POST /api/ipd/patients` gains real validation: case-insensitive duplicate-*active*-patient-
+  name detection (409 on first submission, proceeds on a `confirm_duplicate: true` resubmit --
+  so a genuine second patient sharing a name isn't hard-blocked forever), age `0 <= age <= 130`
+  (0 is a legitimate newborn), ward-capacity check (skipped if the org has no matching `Ward`
+  row), and same-ward same-bed-string conflict detection.
+- `GET/PUT /api/ipd/shifts` (HeadNurse): a real, editable weekly nurse x day grid (every org
+  nurse defaulted to "Off" for days with no row) -- not the reference mockup's read-only
+  hardcoded schedule, since a head nurse needs to actually set shifts.
+- `GET /api/ipd/alerts` (same role gate as the roster): flattens the existing
+  abnormal-vitals/overdue-task roster computation into one paginated, most-recent-first feed,
+  reusing (not re-deriving) the roster logic so the two views can never disagree.
+- `GET /api/ipd/reports?days=7` and `GET /api/ipd/dashboard-summary` (HeadNurse): task-
+  completion-per-day, patients-by-ward, and top-N *raw* diagnosis strings by count (not the
+  reference's 5 invented fixed categories -- `Patient.diagnosis` is free text with no real
+  taxonomy); 4 real KPI counts for the dashboard tiles.
+- `PATCH /api/ipd/tasks/{id}`'s `status` is now whitelisted to `Pending`/`Completed` (previously
+  written with zero validation, unlike `task_type`, which was already validated on create).
+
+New integration test files (`tests/integration/test_ward_capacity_management.py`,
+`test_nurse_shift_scheduling.py`, `test_ipd_reports_and_dashboard_summary.py`,
+`test_ipd_alerts_endpoint.py`, `test_ipd_admit_validation.py`,
+`test_consultations_search_pagination_and_analytics.py`) plus 25 new cases folded into
+`test_role_permission_matrix.py` for every endpoint above, across all 5 roles.
+
+### Changed -- Phase 2: `frontend/opd.html` restructured into a step wizard
+
+Setup -> Transcript -> Clinical Note -> Interactions -> Prescription, with a clickable step-dot
+header (back-navigable to any completed step, forward capped at the furthest reached), plus
+History/Analytics as separate top-level views -- all wrapped *around* the unchanged real
+pipeline (`processConsultation`, `checkInteractions`, `finalizeConsultation`, `populateDraft`,
+`updatePrintPreview`, voice capture), not a reimplementation of it. `#patient-select` stays the
+real state-holder behind a patient-card grid (kept non-`display:none` -- a 1x1px
+visually-hidden pattern -- since `select_option()`/`wait_for_selector()` require a
+non-zero-bounding-box element). The previously-dead `#print-language` dropdown now really
+translates the printed Rx sheet (via the existing `POST /api/translate`, snapshotting and
+restoring the doctor's own English draft fields around the translated print, so the working
+clinical note is never overwritten) and `#live-mode` really gates whether interim speech shows
+live vs. only committing on Stop. History gained real search/pagination; Analytics is wired to
+the new `/api/consultations/analytics` endpoint with lightweight dependency-free inline-SVG
+charts (no new library, matching the app's no-build-step constraint).
+
+### Changed -- Phase 3: `frontend/ipd.html` restructured into a patient drawer + alerts + kanban
+
+`#patient-detail-modal` repositioned into a slide-out right-side drawer (CSS only). Patient
+detail gains a 6th tab -- Overview (admitted duration + assigned nurse, both genuinely computed,
+replacing the reference's hardcoded placeholders), Vitals, Medication (active-medications
+summary + full consultation history -- a disclosed rename of the old "Doctor's Notes" tab, no
+information dropped), Tasks, Nursing Notes, Discharge Summary (kept separate rather than folded
+into a generic notes tab, since it's a substantial already-working feature). New Alerts sidebar
+view backed by `GET /api/ipd/alerts`. Admit modal now shows a ward-capacity dropdown (live
+occupancy, disabled once full) when the org has configured wards, with a confirm-and-resubmit
+flow for the new duplicate-name validation. Tasks view gained a List/Kanban toggle (2 real
+columns -- Pending/Completed -- with overdue shown as a card attribute, not an invented 3rd
+status this system's task lifecycle doesn't have).
+
+### Added -- Phase 4: `frontend/headnurse.html`, a new dedicated HeadNurse page
+
+HeadNurse previously had no page of its own, only role-gated sections inside `ipd.html`.
+New page with the reference's sidebar (Dashboard/Patients/Assign/Tasks/Calendar/Reports): real
+KPI tiles from `GET /api/ipd/dashboard-summary`, an editable weekly shift Calendar
+(`GET`/`PUT /api/ipd/shifts`), and Reports charts (`GET /api/ipd/reports`) -- the first UI ever
+built against these three Phase-1 endpoints. `frontend/js/ipd-shared.js` (plain `<script src>`
+include, no build step) now holds the genuinely shared, stateless pieces (`apiRequest`,
+`closeModal`, `taskTypeBadge`) between `ipd.html` and `headnurse.html`; the deeper patient-
+drawer/admit/task-modal logic is intentionally duplicated rather than abstracted, since it's too
+stateful to share safely without a real module system. Routing split: `index.html`'s post-login
+redirect and `admin.html`'s non-admin-redirect now send `HeadNurse` to `/headnurse.html`
+specifically, `Nurse`/`NursingStation` stay on `/ipd.html`. Clean cutover: the now-dead
+HeadNurse-only branches (Assign view, Create-Task modal, Unassign button, ward-summary variant)
+were removed from `ipd.html` rather than left as dormant dead code.
+
+Two real bugs caught by running (not predicting) the test suite against the new page: (1)
+`test_deep_opd_ipd_voice_journey.py` and `tests/scale/runner.py` still navigated a HeadNurse
+browser session straight to `/ipd.html`, which now bounces to `/headnurse.html` -- fixed to
+target the new page; (2) the voice-mic button's `listening` CSS class toggle (and its
+CSS/animation) was dropped while porting the nursing-consult modal into the new page -- added
+back, confirmed via the existing `test_headnurse_voice_e2e.py` regression coverage.
+
+### Verification
+
+Every phase landed and stayed fully green before the next started. Final state: **1566 tests
+collected**; full non-e2e/scenario suites plus a fresh 57/57 e2e run and 30/31 scenario run (the
+1 scenario failure is a pre-existing Playwright timing flake in one Bengali-transcript OPD case,
+confirmed unrelated to this pass by calling the backend directly with that exact transcript --
+it returns fully correct data -- and by confirming every file in that test's code path is
+untouched by this pass's diff). The finalized OPD prescription's content was re-verified
+fragment-by-fragment against the same reference PDF validated in an earlier pass, proving the
+wizard restructure didn't change what actually gets extracted or printed.
+
 ## 2026-08-01 pass (part 3): full-application end-to-end pass, new Discharge Summary feature,
 ## critical cross-tenant security fix, concurrency testing, multilingual curated use-case library
 
