@@ -1,0 +1,196 @@
+category,test_name,common_alias,department,specimen
+Hematology,Complete Blood Count,CBC / Hemogram,Hematology,Whole blood (EDTA)
+Hematology,Hemoglobin,Hb,Hematology,Whole blood (EDTA)
+Hematology,Total Leucocyte Count,TLC / WBC Count,Hematology,Whole blood (EDTA)
+Hematology,Differential Leucocyte Count,DLC,Hematology,Whole blood (EDTA)
+Hematology,Platelet Count,PLT,Hematology,Whole blood (EDTA)
+Hematology,Peripheral Blood Smear,PBS / PS Study,Hematology,Whole blood (EDTA)
+Hematology,Erythrocyte Sedimentation Rate,ESR,Hematology,Whole blood (EDTA/Citrate)
+Hematology,Reticulocyte Count,Retic Count,Hematology,Whole blood (EDTA)
+Hematology,Absolute Eosinophil Count,AEC,Hematology,Whole blood (EDTA)
+Hematology,Red Cell Indices,MCV/MCH/MCHC,Hematology,Whole blood (EDTA)
+Hematology,Bone Marrow Aspiration & Biopsy,BMA/BMB,Hematology,Bone marrow
+Hematology,Hemoglobin Electrophoresis,Hb Electrophoresis,Hematology,Whole blood (EDTA)
+Hematology,HPLC for Hemoglobinopathy,HbA2/HbF Quantification,Hematology,Whole blood (EDTA)
+Hematology,G6PD Screening,G6PD,Hematology,Whole blood (EDTA)
+Hematology,Osmotic Fragility Test,OFT,Hematology,Whole blood (EDTA)
+Clinical Biochemistry,Fasting Blood Glucose,FBS,Biochemistry,Serum/Plasma (Fluoride)
+Clinical Biochemistry,Post-Prandial Blood Glucose,PPBS,Biochemistry,Serum/Plasma (Fluoride)
+Clinical Biochemistry,Random Blood Glucose,RBS,Biochemistry,Serum/Plasma (Fluoride)
+Clinical Biochemistry,Glycated Hemoglobin,HbA1c,Biochemistry,Whole blood (EDTA)
+Clinical Biochemistry,Blood Urea,Urea,Biochemistry,Serum
+Clinical Biochemistry,Blood Urea Nitrogen,BUN,Biochemistry,Serum
+Clinical Biochemistry,Serum Creatinine,Creatinine,Biochemistry,Serum
+Clinical Biochemistry,Serum Uric Acid,Uric Acid,Biochemistry,Serum
+Clinical Biochemistry,Liver Function Test,LFT Panel,Biochemistry,Serum
+Clinical Biochemistry,Total Bilirubin,T. Bilirubin,Biochemistry,Serum
+Clinical Biochemistry,Direct Bilirubin,D. Bilirubin,Biochemistry,Serum
+Clinical Biochemistry,SGOT / AST,Aspartate Aminotransferase,Biochemistry,Serum
+Clinical Biochemistry,SGPT / ALT,Alanine Aminotransferase,Biochemistry,Serum
+Clinical Biochemistry,Alkaline Phosphatase,ALP,Biochemistry,Serum
+Clinical Biochemistry,Total Protein,T. Protein,Biochemistry,Serum
+Clinical Biochemistry,Serum Albumin,Albumin,Biochemistry,Serum
+Clinical Biochemistry,Gamma Glutamyl Transferase,GGT,Biochemistry,Serum
+Clinical Biochemistry,Renal Function Test,RFT Panel,Biochemistry,Serum
+Clinical Biochemistry,Lipid Profile,Lipid Panel,Biochemistry,Serum (Fasting)
+Clinical Biochemistry,Total Cholesterol,Cholesterol,Biochemistry,Serum
+Clinical Biochemistry,Triglycerides,TG,Biochemistry,Serum
+Clinical Biochemistry,HDL Cholesterol,HDL-C,Biochemistry,Serum
+Clinical Biochemistry,LDL Cholesterol,LDL-C,Biochemistry,Serum
+Clinical Biochemistry,VLDL Cholesterol,VLDL,Biochemistry,Serum
+Clinical Biochemistry,Serum Electrolytes,Na/K/Cl,Biochemistry,Serum/Plasma
+Clinical Biochemistry,Serum Calcium,Ca,Biochemistry,Serum
+Clinical Biochemistry,Serum Phosphorus,Phosphate,Biochemistry,Serum
+Clinical Biochemistry,Serum Magnesium,Mg,Biochemistry,Serum
+Clinical Biochemistry,Amylase,S. Amylase,Biochemistry,Serum
+Clinical Biochemistry,Lipase,S. Lipase,Biochemistry,Serum
+Clinical Biochemistry,Lactate Dehydrogenase,LDH,Biochemistry,Serum
+Clinical Biochemistry,Ammonia,NH3,Biochemistry,"Plasma (EDTA, chilled)"
+Clinical Biochemistry,Vitamin D (25-OH),Vit D3,Biochemistry,Serum
+Clinical Biochemistry,Vitamin B12,Cobalamin,Biochemistry,Serum
+Clinical Biochemistry,Folic Acid,Folate,Biochemistry,Serum
+Clinical Biochemistry,Serum Iron,Iron,Biochemistry,Serum
+Clinical Biochemistry,Total Iron Binding Capacity,TIBC,Biochemistry,Serum
+Clinical Biochemistry,Ferritin,S. Ferritin,Biochemistry,Serum
+Microbiology,Blood Culture & Sensitivity,BACT/C&S,Microbiology,Blood (culture bottle)
+Microbiology,Urine Culture & Sensitivity,Urine C/S,Microbiology,Midstream urine
+Microbiology,Sputum Culture & Sensitivity,Sputum C/S,Microbiology,Sputum
+Microbiology,Stool Culture,Stool C/S,Microbiology,Stool
+Microbiology,Wound/Pus Culture & Sensitivity,Pus C/S,Microbiology,Wound swab/Pus
+Microbiology,CSF Culture & Sensitivity,CSF C/S,Microbiology,Cerebrospinal Fluid
+Microbiology,AFB Smear (Sputum),ZN Stain / AFB Smear,Microbiology,Sputum
+Microbiology,Gram Stain,Gram's Stain,Microbiology,Any body fluid/exudate
+Microbiology,GeneXpert MTB/RIF,CBNAAT,Microbiology,Sputum/Body fluid
+Microbiology,Fungal Culture (KOH + Culture),KOH Mount,Microbiology,Skin/Nail/Hair scraping
+Microbiology,Body Fluid Culture (Pleural/Ascitic),Fluid C/S,Microbiology,Body fluid
+Microbiology,Antibiotic Sensitivity Testing,AST,Microbiology,Isolate
+Microbiology,Throat Swab Culture,Throat Swab C/S,Microbiology,Throat swab
+Serology,Widal Test,Widal,Serology,Serum
+Serology,VDRL Test,VDRL/RPR,Serology,Serum
+Serology,HIV I & II (Screening),HIV ELISA/Rapid,Serology,Serum/Plasma
+Serology,HBsAg,Hepatitis B Surface Antigen,Serology,Serum
+Serology,Anti-HCV,Hepatitis C Antibody,Serology,Serum
+Serology,Dengue NS1 Antigen,Dengue NS1,Serology,Serum
+Serology,Dengue IgM/IgG,Dengue Serology,Serology,Serum
+Serology,Malaria Antigen Test,MP Rapid/ICT,Serology,Whole blood
+Serology,Malaria Parasite Smear,MP Smear,Serology,Whole blood (EDTA)
+Serology,Typhidot (IgM/IgG),Typhidot,Serology,Serum
+Serology,C-Reactive Protein,CRP,Immunology,Serum
+Serology,Rheumatoid Factor,RA Factor,Immunology,Serum
+Serology,ASO Titre,Anti-Streptolysin O,Immunology,Serum
+Serology,Procalcitonin,PCT,Immunology,Serum
+Serology,Chikungunya IgM,Chikungunya Serology,Serology,Serum
+Serology,Scrub Typhus IgM,Scrub Typhus Serology,Serology,Serum
+Serology,Leptospira IgM,Leptospira Serology,Serology,Serum
+Histopathology,Histopathological Examination,HPE / Biopsy Report,Histopathology,Tissue biopsy
+Histopathology,Frozen Section,Frozen Section,Histopathology,Fresh tissue
+Histopathology,Immunohistochemistry,IHC,Histopathology,Paraffin tissue block
+Cytology,Papanicolaou Test,Pap Smear,Cytology,Cervical smear
+Cytology,Fine Needle Aspiration Cytology,FNAC,Cytology,Aspirate smear
+Cytology,Sputum Cytology,Sputum for Malignant Cells,Cytology,Sputum
+Cytology,Body Fluid Cytology,Fluid for Malignant Cells,Cytology,Pleural/Ascitic/CSF fluid
+Molecular Diagnostics,RT-PCR SARS-CoV-2,COVID-19 RT-PCR,Molecular Biology,Nasopharyngeal swab
+Molecular Diagnostics,HBV DNA Quantitative,HBV Viral Load,Molecular Biology,Plasma (EDTA)
+Molecular Diagnostics,HCV RNA Quantitative,HCV Viral Load,Molecular Biology,Plasma (EDTA)
+Molecular Diagnostics,HIV RNA Viral Load,HIV Viral Load,Molecular Biology,Plasma (EDTA)
+Molecular Diagnostics,BCR-ABL Quantitative,CML Molecular Monitoring,Molecular Biology,Whole blood/Bone marrow
+Molecular Diagnostics,EGFR Mutation Analysis,EGFR Mutation,Molecular Biology,Tissue/Blood (liquid biopsy)
+Genetics,Karyotyping,Chromosomal Analysis,Cytogenetics,Whole blood (Heparin)/Bone marrow
+Genetics,FISH Test,Fluorescence In-Situ Hybridization,Cytogenetics,Blood/Bone marrow/Tissue
+Genetics,Non-Invasive Prenatal Testing,NIPT,Genetics,Maternal blood
+Genetics,BRCA1/BRCA2 Mutation Analysis,BRCA Testing,Genetics,Blood (EDTA)
+Blood Bank,ABO & Rh Blood Grouping,Blood Group,Blood Bank,Whole blood (EDTA)
+Blood Bank,Cross Matching,Compatibility Testing,Blood Bank,Whole blood
+Blood Bank,Direct Antiglobulin Test,DCT/DAT,Blood Bank,Whole blood (EDTA)
+Blood Bank,Indirect Antiglobulin Test,ICT/IAT,Blood Bank,Serum
+Blood Bank,Antibody Screening,Irregular Antibody Screen,Blood Bank,Serum
+Endocrinology,Thyroid Function Test,TFT / Thyroid Profile,Biochemistry,Serum
+Endocrinology,TSH,Thyroid Stimulating Hormone,Biochemistry,Serum
+Endocrinology,Free T3,FT3,Biochemistry,Serum
+Endocrinology,Free T4,FT4,Biochemistry,Serum
+Endocrinology,Serum Cortisol,Cortisol,Biochemistry,Serum
+Endocrinology,Serum Insulin,Insulin,Biochemistry,Serum
+Endocrinology,Parathyroid Hormone,PTH,Biochemistry,Serum/Plasma
+Endocrinology,FSH,Follicle Stimulating Hormone,Biochemistry,Serum
+Endocrinology,LH,Luteinizing Hormone,Biochemistry,Serum
+Endocrinology,Prolactin,PRL,Biochemistry,Serum
+Endocrinology,Testosterone (Total),Testosterone,Biochemistry,Serum
+Endocrinology,Growth Hormone,GH,Biochemistry,Serum
+Endocrinology,HbA1c,Glycosylated Hemoglobin,Biochemistry,Whole Blood (EDTA)
+Cardiac Markers,Troponin I / T,Cardiac Troponin,Biochemistry,Serum/Plasma
+Cardiac Markers,CK-MB,Creatine Kinase-MB,Biochemistry,Serum
+Cardiac Markers,NT-proBNP,N-terminal proBNP,Biochemistry,Serum/Plasma (EDTA)
+Cardiac Markers,Total CPK,Creatine Phosphokinase,Biochemistry,Serum
+Cardiac Markers,Myoglobin,Myoglobin,Biochemistry,Serum
+Cardiac Markers,Homocysteine,Hcy,Biochemistry,Serum/Plasma (EDTA)
+Tumor Markers,Prostate Specific Antigen,PSA (Total),Biochemistry,Serum
+Tumor Markers,Free PSA,fPSA,Biochemistry,Serum
+Tumor Markers,CA 125,Ovarian Cancer Marker,Biochemistry,Serum
+Tumor Markers,CA 19-9,Pancreatic Cancer Marker,Biochemistry,Serum
+Tumor Markers,CA 15-3,Breast Cancer Marker,Biochemistry,Serum
+Tumor Markers,Carcinoembryonic Antigen,CEA,Biochemistry,Serum
+Tumor Markers,Alpha Fetoprotein,AFP,Biochemistry,Serum
+Tumor Markers,Beta hCG (Tumor Marker),β-hCG,Biochemistry,Serum
+Coagulation,Prothrombin Time,PT/INR,Hematology,Plasma (Citrate)
+Coagulation,Activated Partial Thromboplastin Time,APTT,Hematology,Plasma (Citrate)
+Coagulation,Bleeding Time,BT,Hematology,Skin puncture
+Coagulation,Clotting Time,CT,Hematology,Whole blood
+Coagulation,D-Dimer,D-Dimer,Hematology,Plasma (Citrate)
+Coagulation,Fibrinogen,Fibrinogen Level,Hematology,Plasma (Citrate)
+Urinalysis,Routine Urine Examination,Urine R/E,Clinical Pathology,Random urine
+Urinalysis,Urine Microalbumin,Microalbuminuria,Biochemistry,Random/24-hr urine
+Urinalysis,24-Hour Urinary Protein,Urine Protein (24-hr),Biochemistry,24-hour urine
+Urinalysis,Urine Pregnancy Test,UPT,Clinical Pathology,Urine
+Urinalysis,Urine Creatinine,Urine Creatinine,Biochemistry,Urine
+Stool Examination,Routine Stool Examination,Stool R/E,Clinical Pathology,Stool
+Stool Examination,Occult Blood Test,FOBT,Clinical Pathology,Stool
+Stool Examination,Stool for Ova & Cyst,Stool O/C,Clinical Pathology,Stool
+Stool Examination,Stool Reducing Substances,Stool Reducing Sugar,Clinical Pathology,Stool
+Toxicology,Serum Alcohol Level,Ethanol Level,Biochemistry,Serum/Blood
+Toxicology,Urine Drug Screen,UDS,Toxicology,Urine
+Toxicology,Serum Paracetamol Level,Acetaminophen Level,Toxicology,Serum
+Toxicology,Cholinesterase (Organophosphate poisoning),Pseudocholinesterase,Toxicology,Serum
+Toxicology,Heavy Metal Screen (Lead),Blood Lead Level,Toxicology,Whole blood
+Virology,Influenza A/B Antigen,Flu Rapid Test,Virology,Nasal/Throat swab
+Virology,Hepatitis A IgM,HAV IgM,Virology,Serum
+Virology,Hepatitis E IgM,HEV IgM,Virology,Serum
+Virology,CMV IgM/IgG,Cytomegalovirus Serology,Virology,Serum
+Virology,EBV Serology,Epstein-Barr Virus Panel,Virology,Serum
+Virology,Herpes Simplex Virus PCR,HSV PCR,Virology,Swab/CSF
+Autoimmune,Antinuclear Antibody,ANA,Immunology,Serum
+Autoimmune,Anti-dsDNA,Anti-double stranded DNA,Immunology,Serum
+Autoimmune,Anti-CCP,Anti-Cyclic Citrullinated Peptide,Immunology,Serum
+Autoimmune,ANCA (c-ANCA/p-ANCA),Anti-Neutrophil Cytoplasmic Antibody,Immunology,Serum
+Autoimmune,Anti-TPO Antibody,Anti-Thyroid Peroxidase,Immunology,Serum
+Autoimmune,Complement C3 & C4,C3/C4 Levels,Immunology,Serum
+Allergy,Total IgE,Serum IgE,Immunology,Serum
+Allergy,Specific IgE (Allergen Panel),RAST Test,Immunology,Serum
+Allergy,Skin Prick Test,SPT,Allergy,In-vivo skin test
+Infectious Diseases,TORCH Panel,TORCH Screen,Serology,Serum
+Infectious Diseases,Tuberculosis QuantiFERON Gold,IGRA/QFT-TB Gold,Immunology,Whole blood
+Infectious Diseases,Mantoux Test,Tuberculin Skin Test,Microbiology,Intradermal
+Infectious Diseases,COVID-19 Antigen (Rapid),RAT,Virology,Nasopharyngeal swab
+Prenatal Testing,Double Marker Test,First Trimester Screen,Biochemistry,Maternal serum
+Prenatal Testing,Triple Marker Test,Second Trimester Screen,Biochemistry,Maternal serum
+Prenatal Testing,Quadruple Marker Test,Quad Screen,Biochemistry,Maternal serum
+Prenatal Testing,Oral Glucose Tolerance Test (Pregnancy),GCT/OGTT,Biochemistry,Serum/Plasma
+Prenatal Testing,Rh Antibody Titre,Anti-D Titre,Blood Bank,Serum
+Neonatal Screening,Newborn Thyroid Screening,TSH (Neonatal),Biochemistry,Heel-prick dried blood spot
+Neonatal Screening,Newborn G6PD Screening,G6PD (Neonatal),Biochemistry,Heel-prick dried blood spot
+Neonatal Screening,Newborn Metabolic Screening,Tandem MS Newborn Screen,Biochemistry,Heel-prick dried blood spot
+Neonatal Screening,Serum Bilirubin (Neonatal),Neonatal Jaundice Bilirubin,Biochemistry,Serum/Capillary blood
+Neonatal Screening,Newborn Hearing Screen (OAE),Otoacoustic Emission Test,Audiology,In-vivo
+Point of Care Tests,Capillary Blood Glucose,Glucometer/POC Glucose,POCT,Capillary blood
+Point of Care Tests,Point of Care Hemoglobin,POC Hb,POCT,Capillary/Whole blood
+Point of Care Tests,Point of Care INR,POC PT/INR,POCT,Capillary blood
+Point of Care Tests,Urine Dipstick Test,Dipstick Urinalysis,POCT,Urine
+Point of Care Tests,Rapid Malaria Test,POC Malaria Antigen,POCT,Whole blood
+Point of Care Tests,Rapid HIV Test,POC HIV,POCT,Whole blood/Serum
+Point of Care Tests,Blood Gas Analysis (POC),POC ABG,POCT,Arterial blood
+ICU Monitoring Tests,Arterial Blood Gas Analysis,ABG,Biochemistry,Arterial blood (Heparinized)
+ICU Monitoring Tests,Serum Lactate,Lactate,Biochemistry,Arterial/Venous blood
+ICU Monitoring Tests,Central Venous Oxygen Saturation,ScvO2,Biochemistry,Central venous blood
+ICU Monitoring Tests,Serum Osmolality,Osmolality,Biochemistry,Serum
+ICU Monitoring Tests,Ionized Calcium,iCa,Biochemistry,Arterial/Venous blood (Heparinized)
+ICU Monitoring Tests,Procalcitonin (Sepsis Marker),PCT,Immunology,Serum
+ICU Monitoring Tests,Blood Culture (ICU Sepsis Workup),Blood C/S,Microbiology,Blood

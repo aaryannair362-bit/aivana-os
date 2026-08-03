@@ -3,6 +3,8 @@ import re
 import time
 import requests
 from .config import settings
+from . import drug_matcher
+from . import lab_test_matcher
 
 MAX_RATE_LIMIT_RETRIES = 3
 
@@ -245,9 +247,17 @@ Return a JSON object with the following structure:
         for key in default:
             if key not in result or result[key] is None:
                 result[key] = default[key]
-        return self._coerce_string_fields(
+        result = self._coerce_string_fields(
             result, ("chiefComplaint", "hpi", "primaryDiagnosis", "differentialDiagnosis", "advice")
         )
+        # Corrects each medication's drugName against the canonical medicines dataset before
+        # the draft ever reaches the doctor -- see drug_matcher.py for why (ASR/LLM-introduced
+        # brand-name misspellings, verified to hit a meaningful fraction of real prescriptions).
+        result["medications"] = drug_matcher.correct_medication_names(result["medications"])
+        # Same idea for recommended lab tests: "CBC"/"Widal"/a misspelled test name gets
+        # normalized against the canonical lab test master (see lab_test_matcher.py).
+        result["labTests"] = lab_test_matcher.correct_lab_test_names(result["labTests"])
+        return result
 
     def clinical_helper(self, current_draft: dict, query: str) -> str:
         prompt = f"""You are an expert physician companion advising on this prescription.
@@ -332,9 +342,11 @@ If information for a field is not present in the input above, use an empty strin
         for key in default:
             if key not in result or result[key] is None:
                 result[key] = default[key]
-        return self._coerce_string_fields(
+        result = self._coerce_string_fields(
             result, ("admissionSummary", "hospitalCourse", "dischargeDiagnosis", "followUpInstructions", "conditionAtDischarge")
         )
+        result["medicationsAtDischarge"] = drug_matcher.correct_medication_names(result["medicationsAtDischarge"])
+        return result
 
     def is_available(self) -> bool:
         if not self.api_key:

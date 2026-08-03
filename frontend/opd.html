@@ -5,77 +5,78 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AIVANA OPD Scribe - Doctor</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e2e8f0; min-height: 100vh; }
-        .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #111827; border-bottom: 1px solid #1e293b; flex-wrap: wrap; gap: 10px; }
-        .app-header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #22d3ee, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background: #FBFAF7; color: #1C2621; min-height: 100vh; }
+        .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #FFFFFF; border-bottom: 1px solid #E6E7E2; flex-wrap: wrap; gap: 10px; }
+        .app-header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #2F6F52, #2F6F52); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .header-right span { font-size: 12px; color: #94a3b8; }
+        .header-right span { font-size: 12px; color: #667169; }
         .app-main { display: flex; flex: 1; }
-        .sidebar { width: 180px; background: #0f172a; border-right: 1px solid #1e293b; padding: 12px 0; }
-        .sidebar button { display: block; width: 100%; padding: 12px 20px; background: transparent; border: none; color: #94a3b8; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.2s; }
-        .sidebar button:hover { background: #1e293b; color: #e2e8f0; }
-        .sidebar button.active { background: #1e293b; color: #22d3ee; border-right: 2px solid #22d3ee; }
+        .sidebar { width: 180px; background: #F3F2EE; border-right: 1px solid #E6E7E2; padding: 12px 0; }
+        .sidebar button { display: block; width: 100%; padding: 12px 20px; background: transparent; border: none; color: #667169; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.2s; }
+        .sidebar button:hover { background: #E6E7E2; color: #1C2621; }
+        .sidebar button.active { background: #E6E7E2; color: #2F6F52; border-right: 2px solid #2F6F52; }
         .content { flex: 1; padding: 20px; overflow-y: auto; max-height: calc(100vh - 80px); }
         .view { display: none; }
         .view.active { display: block; }
         .control-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-        .control-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; }
-        .control-bar select { padding: 6px 10px; background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
-        .btn-primary { padding: 8px 20px; background: linear-gradient(135deg, #06b6d4, #0891b2); border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        .control-bar label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #667169; }
+        .control-bar select { padding: 6px 10px; background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 12px; outline: none; }
+        .btn-primary { padding: 8px 20px; background: linear-gradient(135deg, #2F6F52, #234E39); border: none; border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
         .btn-primary:hover { opacity: 0.9; }
         .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-secondary { padding: 6px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 12px; cursor: pointer; }
-        .btn-secondary:hover { background: #2d3748; }
-        .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid #334155; border-radius: 8px; color: #94a3b8; font-size: 12px; cursor: pointer; }
-        .btn-outline:hover { border-color: #64748b; color: #e2e8f0; }
-        .btn-danger { padding: 6px 14px; background: #dc2626; border: none; border-radius: 8px; color: white; cursor: pointer; }
-        #transcript-input { width: 100%; padding: 12px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; color: #e2e8f0; font-family: monospace; font-size: 13px; resize: vertical; min-height: 80px; outline: none; margin-bottom: 8px; }
-        #transcript-input:focus { border-color: #06b6d4; }
+        .btn-secondary { padding: 6px 14px; background: #E6E7E2; border: 1px solid #E6E7E2; border-radius: 8px; color: #1C2621; font-size: 12px; cursor: pointer; }
+        .btn-secondary:hover { background: #EDEEE8; }
+        .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid #E6E7E2; border-radius: 8px; color: #667169; font-size: 12px; cursor: pointer; }
+        .btn-outline:hover { border-color: #93998F; color: #1C2621; }
+        .btn-danger { padding: 6px 14px; background: #C1694F; border: none; border-radius: 8px; color: white; cursor: pointer; }
+        #transcript-input { width: 100%; padding: 12px; background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 8px; color: #1C2621; font-family: monospace; font-size: 13px; resize: vertical; min-height: 80px; outline: none; margin-bottom: 8px; }
+        #transcript-input:focus { border-color: #2F6F52; }
         #transcript-input:disabled { opacity: 0.6; }
-        #analysis-status { font-size: 13px; color: #22d3ee; min-height: 24px; margin: 8px 0; }
-        #analysis-status.error { color: #f87171; }
-        #analysis-status.success { color: #34d399; }
+        #analysis-status { font-size: 13px; color: #2F6F52; min-height: 24px; margin: 8px 0; }
+        #analysis-status.error { color: #C1694F; }
+        #analysis-status.success { color: #2F6F52; }
         #mic-status { font-size: 12px; padding: 4px 12px; border-radius: 12px; display: inline-block; margin-left: 8px; }
-        #mic-status.idle { background: #1e293b; color: #94a3b8; }
-        #mic-status.listening { background: #dc2626; color: white; animation: pulse 1s infinite; }
-        #mic-status.transcribing { background: #f59e0b; color: #0a0e17; }
+        #mic-status.idle { background: #E6E7E2; color: #667169; }
+        #mic-status.listening { background: #C1694F; color: white; animation: pulse 1s infinite; }
+        #mic-status.transcribing { background: #8A5B22; color: #FBFAF7; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        .prescription-draft { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; margin-top: 16px; }
+        .prescription-draft { background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 12px; padding: 20px; margin-top: 16px; }
         .prescription-draft h2 { font-size: 18px; margin-bottom: 12px; }
         .draft-fields > div { margin-bottom: 12px; }
-        .draft-fields label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; }
-        .draft-fields textarea, .draft-fields input { width: 100%; padding: 8px 12px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 13px; outline: none; }
-        .draft-fields textarea:focus, .draft-fields input:focus { border-color: #06b6d4; }
+        .draft-fields label { display: block; font-size: 12px; font-weight: 600; color: #667169; margin-bottom: 4px; }
+        .draft-fields textarea, .draft-fields input { width: 100%; padding: 8px 12px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 13px; outline: none; }
+        .draft-fields textarea:focus, .draft-fields input:focus { border-color: #2F6F52; }
         .draft-fields textarea { min-height: 50px; resize: vertical; font-family: inherit; }
-        .medication-item, .lab-item { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 4px; margin-bottom: 4px; }
-        .medication-item button, .lab-item button { background: none; border: none; color: #f87171; cursor: pointer; font-size: 16px; margin-left: auto; }
+        .medication-item, .lab-item { display: flex; align-items: center; gap: 8px; padding: 4px 10px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 4px; margin-bottom: 4px; }
+        .medication-item button, .lab-item button { background: none; border: none; color: #C1694F; cursor: pointer; font-size: 16px; margin-left: auto; }
         .medication-add, .lab-add { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-        .medication-add input, .lab-add input { flex: 1; min-width: 80px; padding: 6px 10px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
-        .medication-add select { padding: 6px 10px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 12px; outline: none; }
-        .interaction-section { margin-top: 16px; border-top: 1px solid #1e293b; padding-top: 12px; }
-        .interaction-item { background: #1e293b; padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; border-left: 4px solid #f59e0b; }
-        .interaction-item.severe { border-left-color: #dc2626; }
-        .interaction-item.moderate { border-left-color: #f59e0b; }
-        .interaction-item.mild { border-left-color: #22d3ee; }
-        .interaction-item .drug-pair { font-weight: bold; color: #e2e8f0; }
+        .medication-add input, .lab-add input { flex: 1; min-width: 80px; padding: 6px 10px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 12px; outline: none; }
+        .medication-add select { padding: 6px 10px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 12px; outline: none; }
+        .interaction-section { margin-top: 16px; border-top: 1px solid #E6E7E2; padding-top: 12px; }
+        .interaction-item { background: #E6E7E2; padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; border-left: 4px solid #8A5B22; }
+        .interaction-item.severe { border-left-color: #C1694F; }
+        .interaction-item.moderate { border-left-color: #8A5B22; }
+        .interaction-item.mild { border-left-color: #2F6F52; }
+        .interaction-item .drug-pair { font-weight: bold; color: #1C2621; }
         .interaction-item .severity { font-size: 12px; font-weight: 600; }
-        .interaction-item .reason { font-size: 12px; color: #94a3b8; margin-top: 2px; }
-        .interaction-item .recommendation { font-size: 12px; color: #34d399; margin-top: 2px; }
+        .interaction-item .reason { font-size: 12px; color: #667169; margin-top: 2px; }
+        .interaction-item .recommendation { font-size: 12px; color: #2F6F52; margin-top: 2px; }
         #history-list { display: flex; flex-direction: column; gap: 8px; }
-        .history-item { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: border-color 0.2s; }
-        .history-item:hover { border-color: #06b6d4; }
+        .history-item { background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: border-color 0.2s; }
+        .history-item:hover { border-color: #2F6F52; }
         .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
-        .metric-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; text-align: center; }
-        .metric-label { display: block; font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
-        .metric-value { font-family: monospace; font-size: 22px; font-weight: 700; color: #22d3ee; }
-        #case-logs { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; overflow-x: auto; }
+        .metric-card { background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 10px; padding: 14px; text-align: center; }
+        .metric-label { display: block; font-size: 11px; text-transform: uppercase; color: #93998F; letter-spacing: 0.5px; }
+        .metric-value { font-family: monospace; font-size: 22px; font-weight: 700; color: #2F6F52; }
+        #case-logs { background: #F3F2EE; border: 1px solid #E6E7E2; border-radius: 10px; padding: 16px; overflow-x: auto; }
         #case-logs table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        #case-logs th { text-align: left; padding: 6px 10px; color: #64748b; font-weight: 600; border-bottom: 1px solid #1e293b; }
-        #case-logs td { padding: 6px 10px; border-bottom: 1px solid #0a0e17; }
+        #case-logs th { text-align: left; padding: 6px 10px; color: #93998F; font-weight: 600; border-bottom: 1px solid #E6E7E2; }
+        #case-logs td { padding: 6px 10px; border-bottom: 1px solid #FBFAF7; }
         @media (max-width: 768px) {
             .app-main { flex-direction: column; }
-            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #1e293b; display: flex; overflow-x: auto; }
+            .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #E6E7E2; display: flex; overflow-x: auto; }
             .sidebar button { display: inline-block; width: auto; white-space: nowrap; }
             .control-bar { flex-direction: column; align-items: stretch; }
             .header-right { width: 100%; justify-content: flex-start; }
@@ -83,7 +84,7 @@
         @media print {
             /* body itself (not just #app) carries the dark theme's background/min-height --
                override both, or the empty space below the printed content stays painted
-               #0a0e17 instead of white. */
+               #FBFAF7 instead of white. */
             body { background: white !important; min-height: 0 !important; }
             /* #app is the entire dark-themed dashboard (sidebar, header, all views) --
                display:none removes it from layout entirely, not just paints it invisible,
@@ -103,7 +104,7 @@
         <div class="header-right">
             <span id="ollama-status">🔄 Checking...</span>
             <a href="/ipd.html" class="btn-outline" style="text-decoration:none; display:inline-block;">🏥 Ward Rounds</a>
-            <span id="user-email" style="color:#e2e8f0;"></span>
+            <span id="user-email" style="color:#1C2621;"></span>
             <button id="logout-btn" class="btn-outline">Logout</button>
         </div>
     </header>
@@ -116,7 +117,7 @@
         <section class="content">
             <div id="scribe-view" class="view active">
                 <div class="control-bar">
-                    <select id="patient-select" style="min-width:200px; background:#0f172a; border:1px solid #1e293b; border-radius:6px; padding:6px 10px; color:#e2e8f0; outline:none;">
+                    <select id="patient-select" style="min-width:200px; background:#F3F2EE; border:1px solid #E6E7E2; border-radius:6px; padding:6px 10px; color:#1C2621; outline:none;">
                         <option value="">— Select Patient —</option>
                     </select>
                     <button id="start-consult-btn" class="btn-primary">🎤 Start Consultation</button>
@@ -146,7 +147,7 @@
                             <button id="clear-draft-btn" class="btn-outline">Clear</button>
                             <button id="print-btn" class="btn-primary">🖨️ Prepare Rx Sheet</button>
                             <button id="check-interactions-btn" class="btn-secondary">🔬 Check Interactions</button>
-                            <button id="finalize-btn" class="btn-primary" style="background:linear-gradient(135deg, #34d399, #059669);">✅ Finalize &amp; Save</button>
+                            <button id="finalize-btn" class="btn-primary" style="background:linear-gradient(135deg, #2F6F52, #234E39);">✅ Finalize &amp; Save</button>
                         </div>
                     </div>
                     <div class="draft-fields">
@@ -194,7 +195,7 @@
                     <div class="metric-card"><span class="metric-label">Total Cases</span><span class="metric-value" id="total-cases">0</span></div>
                     <div class="metric-card"><span class="metric-label">Avg Latency</span><span class="metric-value" id="avg-latency">0s</span></div>
                     <div class="metric-card"><span class="metric-label">Avg Tokens</span><span class="metric-value" id="avg-tokens">0</span></div>
-                    <div class="metric-card"><span class="metric-label">Groq</span><span class="metric-value" id="ollama-status-metric">Checking...</span></div>
+                    <div class="metric-card"><span class="metric-label">AI Assistant</span><span class="metric-value" id="ollama-status-metric">Checking...</span></div>
                 </div>
                 <div id="case-logs"></div>
             </div>
@@ -289,12 +290,12 @@ async function checkGroqStatus() {
             const el = document.getElementById('ollama-status');
             const metricEl = document.getElementById('ollama-status-metric');
             if (data.groq_available !== undefined) {
-                el.textContent = data.groq_available ? `✅ Groq: ${data.groq_model}` : '❌ Groq not available';
-                el.style.color = data.groq_available ? '#34d399' : '#f87171';
+                el.textContent = data.groq_available ? '✅ AI Assistant Ready' : '❌ AI Assistant Unavailable';
+                el.style.color = data.groq_available ? '#2F6F52' : '#C1694F';
                 if (metricEl) metricEl.textContent = data.groq_available ? '✅ Connected' : '❌ Disconnected';
             } else {
                 el.textContent = '✅ AI Available';
-                el.style.color = '#34d399';
+                el.style.color = '#2F6F52';
             }
         }
     } catch(e) {
@@ -451,13 +452,13 @@ function renderInteractions(interactions) {
         container.innerHTML = interactions.map(i => `
             <div class="interaction-item ${i.severity ? i.severity.toLowerCase() : ''}">
                 <div class="drug-pair">${i.drug_pair || 'Unknown pair'}</div>
-                <div class="severity" style="color:${i.severity === 'Severe' ? '#dc2626' : i.severity === 'Moderate' ? '#f59e0b' : '#22d3ee'}">Severity: ${i.severity || 'Unknown'}</div>
+                <div class="severity" style="color:${i.severity === 'Severe' ? '#C1694F' : i.severity === 'Moderate' ? '#8A5B22' : '#2F6F52'}">Severity: ${i.severity || 'Unknown'}</div>
                 <div class="reason">Reason: ${i.reason || 'No reason provided'}</div>
                 <div class="recommendation">Recommendation: ${i.recommendation || 'Consult pharmacist'}</div>
             </div>
         `).join('');
     } else {
-        container.innerHTML = '<div style="color:#34d399;">✅ No drug interactions detected.</div>';
+        container.innerHTML = '<div style="color:#2F6F52;">✅ No drug interactions detected.</div>';
     }
 }
 
@@ -565,7 +566,7 @@ function populateDraft(data) {
     } else {
         const div = document.createElement('div');
         div.className = 'medication-item';
-        div.innerHTML = `<span style="color:#64748b;">No medications found.</span>`;
+        div.innerHTML = `<span style="color:#93998F;">No medications found.</span>`;
         medList.appendChild(div);
     }
     const labList = document.getElementById('lab-tests-list');
@@ -580,7 +581,7 @@ function populateDraft(data) {
     } else {
         const div = document.createElement('div');
         div.className = 'lab-item';
-        div.innerHTML = `<span style="color:#64748b;">No lab tests recommended.</span>`;
+        div.innerHTML = `<span style="color:#93998F;">No lab tests recommended.</span>`;
         labList.appendChild(div);
     }
 }
@@ -645,12 +646,12 @@ function createPrintModal() {
     modal.className = 'modal';
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:none;align-items:center;justify-content:center;z-index:1000;';
     modal.innerHTML = `
-        <div style="background:#111827;border:1px solid #1e293b;border-radius:16px;padding:24px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;">
+        <div style="background:#FFFFFF;border:1px solid #E6E7E2;border-radius:16px;padding:24px;max-width:900px;width:95%;max-height:90vh;overflow-y:auto;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-                <h2 style="color:#e2e8f0;">🖨️ Prescription Preview</h2>
-                <button onclick="document.getElementById('print-modal').style.display='none'" style="background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer;">&times;</button>
+                <h2 style="color:#1C2621;">🖨️ Prescription Preview</h2>
+                <button onclick="document.getElementById('print-modal').style.display='none'" style="background:none;border:none;color:#667169;font-size:24px;cursor:pointer;">&times;</button>
             </div>
-            <div id="print-preview" style="background:white;color:black;padding:32px;border-radius:8px;min-height:400px;font-family:'Segoe UI',sans-serif;"></div>
+            <div id="print-preview" style="background:white;color:black;padding:32px;border-radius:8px;min-height:400px;font-family:'Inter', -apple-system, sans-serif;"></div>
             <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end;">
                 <button onclick="document.getElementById('print-modal').style.display='none'" class="btn-secondary">Cancel</button>
                 <button onclick="window.print()" class="btn-primary">🖨️ Print / Save PDF</button>
@@ -685,57 +686,57 @@ function updatePrintPreview() {
     const recordNo = `AIV-${new Date().getFullYear()}-${String(Math.floor(100000 + Math.random() * 900000))}`;
     preview.innerHTML = `
         <div style="max-width:700px;margin:0 auto;font-size:11px;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #E6E7E2;padding-bottom:12px;margin-bottom:16px;">
                 <div>
                     <h2 style="font-size:18px;font-weight:700;margin:0;">Dr. ${document.getElementById('user-email')?.textContent || 'Clinician'}</h2>
-                    <p style="font-size:10px;color:#64748b;margin:2px 0;">Reg No: KMC-90412</p>
-                    <p style="font-size:10px;color:#64748b;margin:0;">Department of General Medicine</p>
+                    <p style="font-size:10px;color:#93998F;margin:2px 0;">Reg No: KMC-90412</p>
+                    <p style="font-size:10px;color:#93998F;margin:0;">Department of General Medicine</p>
                 </div>
                 <div style="text-align:right;">
                     <p style="font-size:13px;font-weight:700;margin:0;letter-spacing:0.5px;">AIVANA CLINICAL OPD</p>
-                    <p style="font-size:10px;color:#64748b;margin:2px 0 0;">Outpatient Department</p>
+                    <p style="font-size:10px;color:#93998F;margin:2px 0 0;">Outpatient Department</p>
                 </div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;background:#f1f5f9;padding:12px;border-radius:6px;margin-bottom:16px;font-size:10px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;background:#F3F2EE;padding:12px;border-radius:6px;margin-bottom:16px;font-size:10px;">
                 <div><strong>PATIENT</strong><br>${currentPatientName || document.getElementById('patient-select')?.options[document.getElementById('patient-select').selectedIndex]?.text || 'N/A'}</div>
                 <div><strong>AGE/SEX</strong><br>${(currentPatientAge ? currentPatientAge + ' yrs' : '') + (currentPatientAge && currentPatientGender ? ' / ' : '') + (currentPatientGender || '') || 'N/A'}</div>
                 <div><strong>RECORD NO</strong><br>${recordNo}</div>
                 <div><strong>DATE</strong><br>${new Date().toISOString().split('T')[0]}</div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
-                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Chief Complaint</strong>
+                <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;">
+                    <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Chief Complaint</strong>
                     <p style="font-size:12px;margin:4px 0 0;">${cc}</p>
                 </div>
-                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
-                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">History / Findings</strong>
+                <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;">
+                    <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">History / Findings</strong>
                     <p style="font-size:12px;margin:4px 0 0;">${hpi}</p>
                 </div>
             </div>
-            <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;margin-bottom:16px;">
-                <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Primary Suspected Diagnosis</strong>
+            <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;margin-bottom:16px;">
+                <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Primary Suspected Diagnosis</strong>
                 <p style="font-size:12px;font-weight:600;margin:4px 0 0;">${pd}</p>
-                ${dd ? `<p style="font-size:11px;color:#64748b;margin:2px 0 0;">Differential Rule-Outs: ${dd}</p>` : ''}
+                ${dd ? `<p style="font-size:11px;color:#93998F;margin:2px 0 0;">Differential Rule-Outs: ${dd}</p>` : ''}
             </div>
             <div style="margin-bottom:16px;">
-                <div style="font-size:16px;font-weight:700;color:#0d9488;margin-bottom:6px;">℞ Pharmacotherapy Regimen</div>
+                <div style="font-size:16px;font-weight:700;color:#2F6F52;margin-bottom:6px;">℞ Pharmacotherapy Regimen</div>
                 ${meds.length > 0 ? `
-                    <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid #e2e8f0;">
-                        <thead style="background:#f1f5f9;"><tr><th>#</th><th>Drug</th><th>Dose</th><th>Frequency</th><th>Route</th><th>Duration</th></tr></thead>
+                    <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid #1C2621;">
+                        <thead style="background:#F3F2EE;"><tr><th>#</th><th>Drug</th><th>Dose</th><th>Frequency</th><th>Route</th><th>Duration</th></tr></thead>
                         <tbody>${medHtml}</tbody>
                     </table>
-                ` : '<p style="color:#94a3b8;font-size:12px;">No medications prescribed.</p>'}
+                ` : '<p style="color:#667169;font-size:12px;">No medications prescribed.</p>'}
             </div>
-            ${labHtml ? `<div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;margin-bottom:12px;"><strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Recommended Diagnostics</strong><div style="font-size:12px;margin-top:4px;">${labHtml}</div></div>` : ''}
-            <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;margin-bottom:12px;">
-                <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Special Advice & Instructions</strong>
+            ${labHtml ? `<div style="border:1px solid #1C2621;padding:10px;border-radius:4px;margin-bottom:12px;"><strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Recommended Diagnostics</strong><div style="font-size:12px;margin-top:4px;">${labHtml}</div></div>` : ''}
+            <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;margin-bottom:12px;">
+                <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Special Advice & Instructions</strong>
                 <p style="font-size:12px;margin:4px 0 0;">${advice}</p>
             </div>
-            <div style="border-top:1px solid #e2e8f0;padding-top:16px;margin-top:16px;display:flex;justify-content:space-between;font-size:9px;color:#94a3b8;">
+            <div style="border-top:1px solid #1C2621;padding-top:16px;margin-top:16px;display:flex;justify-content:space-between;font-size:9px;color:#667169;">
                 <span>*Digitally generated via AIVANA Clinical OPD Platform.</span>
                 <div style="text-align:right;">
-                    <div style="border-bottom:1px dashed #94a3b8;width:120px;margin:0 auto 4px;height:30px;"></div>
-                    <strong style="color:#1e293b;">Dr. ${document.getElementById('user-email')?.textContent || 'Clinician'}</strong><br>
+                    <div style="border-bottom:1px dashed #667169;width:120px;margin:0 auto 4px;height:30px;"></div>
+                    <strong style="color:#E6E7E2;">Dr. ${document.getElementById('user-email')?.textContent || 'Clinician'}</strong><br>
                     <span>Reg No: KMC-90412</span>
                 </div>
             </div>
@@ -750,13 +751,13 @@ async function loadConsultations() {
             const data = await res.json();
             const container = document.getElementById('history-list');
             if (!data.consultations || data.consultations.length === 0) {
-                container.innerHTML = '<p style="color:#64748b;">No consultations yet.</p>';
+                container.innerHTML = '<p style="color:#93998F;">No consultations yet.</p>';
                 return;
             }
             container.innerHTML = data.consultations.map(c => `
                 <div class="history-item" onclick="loadConsultation(${c.id})">
                     <strong>${c.case_id}</strong> - ${new Date(c.created_at).toLocaleDateString()}
-                    <div style="color:#94a3b8;">${c.chief_complaint || 'No complaint'} • ${c.medications_count} meds</div>
+                    <div style="color:#667169;">${c.chief_complaint || 'No complaint'} • ${c.medications_count} meds</div>
                 </div>
             `).join('');
         }
@@ -793,7 +794,7 @@ async function loadMetrics() {
             }
             const container = document.getElementById('case-logs');
             if (cons.length === 0) {
-                container.innerHTML = '<p style="color:#64748b;">No logs</p>';
+                container.innerHTML = '<p style="color:#93998F;">No logs</p>';
                 return;
             }
             container.innerHTML = `

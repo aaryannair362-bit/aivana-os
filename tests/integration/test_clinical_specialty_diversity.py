@@ -12,6 +12,7 @@ correctly, not evaluating LLM accuracy (that boundary is documented in TEST_NOTE
 import pytest
 
 from tests.conftest import mock_groq_json
+from app import lab_test_matcher
 
 
 @pytest.fixture
@@ -271,7 +272,11 @@ def test_specialty_scenario_full_detail_retrievable(client, doctor, auth_headers
     details = client.get(f"/api/consultations/{latest['id']}", headers=auth_headers(doctor)).json()
     assert details["raw_transcript"] == transcript
     assert details["advice"] == extraction["advice"]
-    assert details["lab_tests"] == extraction["labTests"]
+    # app/lab_test_matcher.py normalizes recommended lab test names (aliases/casing/plurals)
+    # against the canonical lab test master -- this pins down that normalization, not verbatim
+    # passthrough, as the intended current behavior; see lab_test_matcher.py's own test suite
+    # for the matcher's correctness in isolation.
+    assert details["lab_tests"] == lab_test_matcher.correct_lab_test_names(list(extraction["labTests"]))
 
 
 @pytest.mark.parametrize("case_id,transcript,extraction", SPECIALTY_CASES, ids=[c[0] for c in SPECIALTY_CASES])

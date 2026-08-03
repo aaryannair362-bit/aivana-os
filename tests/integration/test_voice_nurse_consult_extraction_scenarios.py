@@ -5,9 +5,12 @@ Since the persistence fix (see CHANGELOG.md), this endpoint is preview-only: it 
 the database, so these tests focus on response-shape correctness and crash-resistance across a
 wide variety of mocked Groq outputs, rather than DB state.
 """
+import copy
+
 import pytest
 
 from tests.conftest import mock_groq_json
+from app import lab_test_matcher
 
 
 @pytest.fixture
@@ -65,7 +68,10 @@ def test_full_combined_dictation_returned_for_review(client, nurse, patient_id, 
     assert resp.status_code == 200
     data = resp.json()
     assert data["vitals"] == extraction["vitals"]
-    assert data["labs"] == extraction["labs"]
+    # app/lab_test_matcher.py normalizes each lab entry's "test" name (e.g. "WBC" ->
+    # "Total Leucocyte Count") -- pins down that normalization as intended current behavior.
+    # deepcopy: correct_lab_test_entries mutates its argument in place.
+    assert data["labs"] == lab_test_matcher.correct_lab_test_entries(copy.deepcopy(extraction["labs"]), key="test")
     assert data["nursing_note"] == extraction["nursing_note"]
 
 

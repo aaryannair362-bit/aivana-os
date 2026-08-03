@@ -29,6 +29,15 @@ live: this proves the full pipeline (voice capture -> transcript -> extraction -
 auto-tasks -> interaction-check -> print) doesn't corrupt or drop anything, with output that is
 deterministically, exactly verifiable against the reference PDF -- not a claim that a live model
 would reproduce this content from the same audio.
+
+Also exercises the real (not mocked) drug-name fuzzy-correction feature (app/drug_matcher.py),
+which now runs inside scribe.scribe_transcript itself: "Tablet Zanocin"/200mg and "Tablet
+Calpol"/500mg -- what the mocked LLM returns, matching the reference PDF verbatim -- get
+canonicalized against the real ~249k-name medicines dataset to "Zanocin 200 Tablet" and "Calpol
+500mg Tablet" before the draft ever reaches the UI or gets persisted. This doesn't change the
+reference PDF's clinical content (same brand, same strength, same form), just folds the
+strength/form into the canonical product name the way the dataset represents it. See
+CORRECTED_OPD_MEDICATIONS below for the exact expected post-correction shape.
 """
 import json
 from datetime import datetime, timedelta
@@ -73,6 +82,20 @@ REFERENCE_OPD = {
     "labTests": [],
     "advice": "Drink boiled and cooled water. Take adequate rest. Follow up in 5 days, or earlier if symptoms worsen.",
 }
+
+# What REFERENCE_OPD["medications"] actually become after app/drug_matcher.py's real (not
+# mocked) fuzzy correction runs inside scribe_transcript -- verified directly against the real
+# dataset during development. "Electral Powder" is untouched: it doesn't appear anywhere in the
+# source dataset, and drug_matcher deliberately leaves a name alone rather than force-matching
+# it to an unrelated product just because something scores highest among a bad field.
+CORRECTED_OPD_MEDICATIONS = [
+    {"drugName": "Zanocin 200 Tablet", "dose": "200 mg",
+     "frequency": "Twice daily (morning and evening)", "route": "Oral", "duration": "5 days"},
+    {"drugName": "Calpol 500mg Tablet", "dose": "500 mg",
+     "frequency": "As needed (SOS)", "route": "Oral", "duration": "As needed"},
+    {"drugName": "Electral Powder", "dose": "1 sachet",
+     "frequency": "Mixed in water as needed", "route": "Oral", "duration": "As needed"},
+]
 
 OPD_TRANSCRIPT_UTTERANCES = [
     "Doctor: What brings you in today?",
@@ -259,7 +282,9 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
     assert _field("#primary-diagnosis") == REFERENCE_OPD["primaryDiagnosis"]
     assert _field("#differential-diagnosis") == REFERENCE_OPD["differentialDiagnosis"]
     assert _field("#advice") == REFERENCE_OPD["advice"]
-    assert doctor_page.evaluate("getMedications()") == REFERENCE_OPD["medications"]
+    # Post-drug_matcher-correction shape, not REFERENCE_OPD["medications"] verbatim -- see
+    # CORRECTED_OPD_MEDICATIONS.
+    assert doctor_page.evaluate("getMedications()") == CORRECTED_OPD_MEDICATIONS
     assert doctor_page.evaluate("getLabTests()") == []
 
     interaction_text = doctor_page.eval_on_selector("#interaction-results", "el => el.textContent") or ""
@@ -285,7 +310,7 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
         assert opd_consult.hpi == REFERENCE_OPD["hpi"]
         assert opd_consult.primary_diagnosis == REFERENCE_OPD["primaryDiagnosis"]
         assert opd_consult.differential_diagnosis == REFERENCE_OPD["differentialDiagnosis"]
-        assert opd_consult.medications == REFERENCE_OPD["medications"]
+        assert opd_consult.medications == CORRECTED_OPD_MEDICATIONS
         assert opd_consult.advice == REFERENCE_OPD["advice"]
         assert opd_consult.patient_name == "John Doe"
         assert opd_consult.patient_age == "45"
@@ -304,8 +329,8 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
     print_text = doctor_page.eval_on_selector("#print-preview", "el => el.innerText")
     for expected_fragment in (
         "John Doe", "45 yrs", "Male", "Acute Gastroenteritis",
-        "Food Poisoning, Viral Gastroenteritis", "Tablet Zanocin", "200 mg", "5 days",
-        "Tablet Calpol", "500 mg", "Electral Powder", "1 sachet",
+        "Food Poisoning, Viral Gastroenteritis", "Zanocin 200 Tablet", "200 mg", "5 days",
+        "Calpol 500mg Tablet", "500 mg", "Electral Powder", "1 sachet",
         "Drink boiled and cooled water", "Digitally generated via AIVANA Clinical OPD Platform",
     ):
         assert expected_fragment in print_text, f"missing {expected_fragment!r} from OPD print preview:\n{print_text}"
@@ -316,7 +341,13 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
         notes.append(f"OPD PDF export unavailable in this environment: {exc}")
 
     (opd_dir / "transcript.txt").write_text(full_transcript, encoding="utf-8")
-    (opd_dir / "extracted_draft.json").write_text(json.dumps(REFERENCE_OPD, indent=2), encoding="utf-8")
+    (opd_dir / "extracted_draft.json").write_text(
+        json.dumps({**REFERENCE_OPD, "medications": CORRECTED_OPD_MEDICATIONS}, indent=2), encoding="utf-8"
+    )
+    (opd_dir / "drug_name_corrections.json").write_text(json.dumps({
+        "note": "app/drug_matcher.py's real fuzzy correction, exercised (not mocked) by this test",
+        "before": REFERENCE_OPD["medications"], "after": CORRECTED_OPD_MEDICATIONS,
+    }, indent=2), encoding="utf-8")
     (opd_dir / "print_preview.txt").write_text(print_text, encoding="utf-8")
 
     # ================= Step 3: condition worsens -> admitted to IPD for IV fluids =================
@@ -500,7 +531,7 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
         timeout=20000,
     )
     summary_text = head_nurse_page.eval_on_selector("#discharge-summary-content", "el => el.innerText")
-    for fragment in ("dehydration", "Acute Gastroenteritis with dehydration, resolved", "Tablet Zanocin", "Stable, improved"):
+    for fragment in ("dehydration", "Acute Gastroenteritis with dehydration, resolved", "Zanocin 200 Tablet", "Stable, improved"):
         assert fragment in summary_text, f"missing {fragment!r} from discharge summary:\n{summary_text}"
 
     head_nurse_page.click("button:has-text('Print / Save PDF')")

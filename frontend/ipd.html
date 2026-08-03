@@ -5,69 +5,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IPD Nursing</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e2e8f0; min-height: 100vh; }
-        .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #111827; border-bottom: 1px solid #1e293b; flex-wrap: wrap; gap: 10px; }
-        .app-header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #22d3ee, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background: #FBFAF7; color: #1C2621; min-height: 100vh; }
+        .app-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #FFFFFF; border-bottom: 1px solid #E6E7E2; flex-wrap: wrap; gap: 10px; }
+        .app-header h1 { font-size: 20px; font-weight: 700; background: linear-gradient(135deg, #2F6F52, #2F6F52); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .header-right span { font-size: 12px; color: #94a3b8; }
+        .header-right span { font-size: 12px; color: #667169; }
         .app-main { display: flex; flex: 1; }
-        .sidebar { width: 200px; background: #0f172a; border-right: 1px solid #1e293b; padding: 12px 0; }
-        .sidebar button { display: block; width: 100%; padding: 12px 20px; background: transparent; border: none; color: #94a3b8; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.2s; }
-        .sidebar button:hover { background: #1e293b; color: #e2e8f0; }
-        .sidebar button.active { background: #1e293b; color: #22d3ee; border-right: 2px solid #22d3ee; }
+        .sidebar { width: 200px; background: #F3F2EE; border-right: 1px solid #E6E7E2; padding: 12px 0; }
+        .sidebar button { display: block; width: 100%; padding: 12px 20px; background: transparent; border: none; color: #667169; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; transition: all 0.2s; }
+        .sidebar button:hover { background: #E6E7E2; color: #1C2621; }
+        .sidebar button.active { background: #E6E7E2; color: #2F6F52; border-right: 2px solid #2F6F52; }
         .content { flex: 1; padding: 20px; overflow-y: auto; max-height: calc(100vh - 80px); }
         .view { display: none; }
         .view.active { display: block; }
         .patient-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
-        .patient-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; transition: border-color 0.2s; cursor: pointer; }
-        .patient-card:hover { border-color: #06b6d4; }
+        .patient-card { background: #FFFFFF; border: 1px solid #E6E7E2; border-radius: 12px; padding: 16px; transition: border-color 0.2s; cursor: pointer; }
+        .patient-card:hover { border-color: #2F6F52; }
         .patient-card h3 { font-size: 16px; margin-bottom: 4px; }
-        .patient-card .meta { font-size: 12px; color: #94a3b8; }
+        .patient-card .meta { font-size: 12px; color: #667169; }
         .patient-card .vital { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; font-size: 13px; }
-        .patient-card .vital span { background: #0f172a; padding: 2px 8px; border-radius: 12px; }
-        .btn-primary { padding: 8px 16px; background: linear-gradient(135deg, #06b6d4, #0891b2); border: none; border-radius: 8px; color: white; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
+        .patient-card .vital span { background: #F3F2EE; padding: 2px 8px; border-radius: 12px; }
+        .btn-primary { padding: 8px 16px; background: linear-gradient(135deg, #2F6F52, #234E39); border: none; border-radius: 8px; color: white; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
         .btn-primary:hover { opacity: 0.9; }
-        .btn-secondary { padding: 6px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 12px; cursor: pointer; }
-        .btn-secondary:hover { background: #2d3748; }
-        .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid #334155; border-radius: 8px; color: #94a3b8; font-size: 12px; cursor: pointer; }
-        .btn-outline:hover { border-color: #64748b; color: #e2e8f0; }
+        .btn-secondary { padding: 6px 14px; background: #E6E7E2; border: 1px solid #E6E7E2; border-radius: 8px; color: #1C2621; font-size: 12px; cursor: pointer; }
+        .btn-secondary:hover { background: #EDEEE8; }
+        .btn-outline { padding: 6px 14px; background: transparent; border: 1px solid #E6E7E2; border-radius: 8px; color: #667169; font-size: 12px; cursor: pointer; }
+        .btn-outline:hover { border-color: #93998F; color: #1C2621; }
         .form-group { margin-bottom: 12px; }
-        .form-group label { display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; }
-        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 12px; background: #0a0e17; border: 1px solid #1e293b; border-radius: 6px; color: #e2e8f0; font-size: 13px; outline: none; }
+        .form-group label { display: block; font-size: 12px; font-weight: 600; color: #667169; margin-bottom: 4px; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 12px; background: #FBFAF7; border: 1px solid #E6E7E2; border-radius: 6px; color: #1C2621; font-size: 13px; outline: none; }
         .form-group textarea { min-height: 60px; resize: vertical; }
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #06b6d4; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #2F6F52; }
         .modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-        .modal-content { background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto; }
+        .modal-content { background: #FFFFFF; border: 1px solid #E6E7E2; border-radius: 16px; padding: 24px; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .modal-header h2 { font-size: 18px; }
-        .modal-close { background: none; border: none; color: #94a3b8; font-size: 24px; cursor: pointer; }
+        .modal-close { background: none; border: none; color: #667169; font-size: 24px; cursor: pointer; }
         .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-        .voice-btn { background: #06b6d4; color: #0a0e17; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; transition: 0.2s; }
+        .voice-btn { background: #2F6F52; color: #FBFAF7; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; transition: 0.2s; }
         .voice-btn:hover { transform: scale(1.05); }
-        .voice-btn.listening { background: #dc2626; animation: pulse 1s infinite; }
+        .voice-btn.listening { background: #C1694F; animation: pulse 1s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
-        .abnormal { border-left: 4px solid #dc2626; }
-        .alert-banner { background: #dc2626; color: white; padding: 8px 16px; border-radius: 8px; margin-bottom: 12px; display: none; }
-        .tab-bar { display: flex; gap: 8px; border-bottom: 1px solid #1e293b; padding-bottom: 8px; margin-bottom: 16px; }
-        .tab-btn { background: none; border: none; padding: 6px 16px; color: #94a3b8; cursor: pointer; font-size: 13px; }
-        .tab-btn.active { color: #22d3ee; border-bottom: 2px solid #22d3ee; }
-        .role-badge { background: #1e293b; padding: 2px 10px; border-radius: 12px; font-size: 10px; text-transform: uppercase; }
-        .vital-item, .lab-item { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; background: #0f172a; padding: 4px 8px; border-radius: 4px; }
-        .vital-item input, .lab-item input { background: transparent; border: 1px solid #1e293b; border-radius: 4px; padding: 4px; color: #e2e8f0; flex: 1; }
-        .vital-item input:focus, .lab-item input:focus { border-color: #06b6d4; outline: none; }
-        .del-btn { background: none; border: none; color: #f87171; cursor: pointer; font-size: 18px; }
-        .del-btn:hover { color: #dc2626; }
-        .patient-list-item { background: #111827; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; cursor: pointer; transition: border-color 0.2s; }
-        .patient-list-item:hover { border-color: #06b6d4; }
-        .stat-tile { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 16px; min-width: 110px; }
+        .abnormal { border-left: 4px solid #C1694F; }
+        .alert-banner { background: #C1694F; color: white; padding: 8px 16px; border-radius: 8px; margin-bottom: 12px; display: none; }
+        .tab-bar { display: flex; gap: 8px; border-bottom: 1px solid #E6E7E2; padding-bottom: 8px; margin-bottom: 16px; }
+        .tab-btn { background: none; border: none; padding: 6px 16px; color: #667169; cursor: pointer; font-size: 13px; }
+        .tab-btn.active { color: #2F6F52; border-bottom: 2px solid #2F6F52; }
+        .role-badge { background: #E6E7E2; padding: 2px 10px; border-radius: 12px; font-size: 10px; text-transform: uppercase; }
+        .vital-item, .lab-item { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; background: #F3F2EE; padding: 4px 8px; border-radius: 4px; }
+        .vital-item input, .lab-item input { background: transparent; border: 1px solid #E6E7E2; border-radius: 4px; padding: 4px; color: #1C2621; flex: 1; }
+        .vital-item input:focus, .lab-item input:focus { border-color: #2F6F52; outline: none; }
+        .del-btn { background: none; border: none; color: #C1694F; cursor: pointer; font-size: 18px; }
+        .del-btn:hover { color: #C1694F; }
+        .patient-list-item { background: #FFFFFF; border: 1px solid #E6E7E2; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; cursor: pointer; transition: border-color 0.2s; }
+        .patient-list-item:hover { border-color: #2F6F52; }
+        .stat-tile { background: #FFFFFF; border: 1px solid #E6E7E2; border-radius: 10px; padding: 10px 16px; min-width: 110px; }
         .stat-tile .stat-value { font-size: 22px; font-weight: 700; }
-        .stat-tile .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.03em; }
-        .stat-tile.warn .stat-value { color: #f87171; }
+        .stat-tile .stat-label { font-size: 11px; color: #667169; text-transform: uppercase; letter-spacing: 0.03em; }
+        .stat-tile.warn .stat-value { color: #C1694F; }
         @media print {
             /* body itself (not just #app) carries the dark theme's background/min-height --
                override both, or the empty space below the printed content stays painted
-               #0a0e17 instead of white. */
+               #FBFAF7 instead of white. */
             body { background: white !important; min-height: 0 !important; }
             /* #app is the entire dark-themed dashboard (sidebar, header, all views) --
                display:none removes it from layout entirely, not just paints it invisible,
@@ -86,7 +87,7 @@
         <h1>🏥 IPD Nursing</h1>
         <div class="header-right">
             <span id="ollama-status">🔄 Checking...</span>
-            <span id="user-email" style="color:#e2e8f0;"></span>
+            <span id="user-email" style="color:#1C2621;"></span>
             <span id="user-role" class="role-badge"></span>
             <button id="logout-btn" class="btn-outline">Logout</button>
         </div>
@@ -107,7 +108,7 @@
             </div>
             <div id="patients-view" class="view">
                 <h2>All Patients</h2>
-                <input id="patient-search" type="text" placeholder="🔎 Search by name, ward, or bed..." style="width:100%;max-width:360px;padding:8px 12px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;margin-top:10px;" />
+                <input id="patient-search" type="text" placeholder="🔎 Search by name, ward, or bed..." style="width:100%;max-width:360px;padding:8px 12px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;margin-top:10px;" />
                 <div id="patient-list" style="margin-top:12px;"></div>
                 <button id="show-admit-btn" class="btn-primary" style="margin-top:12px;">➕ Admit Patient</button>
             </div>
@@ -178,12 +179,12 @@
             <label style="font-weight:600;display:block;margin-bottom:4px;">📝 Speak or type the nursing narrative</label>
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
                 <button id="nursing-voice-btn" class="voice-btn">🎤</button>
-                <span id="nursing-voice-status" style="font-size:12px; color:#94a3b8;">Click mic to speak</span>
+                <span id="nursing-voice-status" style="font-size:12px; color:#667169;">Click mic to speak</span>
             </div>
-            <textarea id="nursing-voice-text" rows="6" placeholder="Type or speak the consultation... e.g. 'BP 120/80, HR 72, Hb 12.5, patient is stable...'" style="width:100%;padding:8px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;resize:vertical;"></textarea>
+            <textarea id="nursing-voice-text" rows="6" placeholder="Type or speak the consultation... e.g. 'BP 120/80, HR 72, Hb 12.5, patient is stable...'" style="width:100%;padding:8px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;resize:vertical;"></textarea>
             <button id="nursing-process-btn" class="btn-primary" style="margin-top:8px;">⚙️ Process</button>
         </div>
-        <div id="nursing-extracted" style="display:none; margin-top:16px; border-top:1px solid #1e293b; padding-top:16px;">
+        <div id="nursing-extracted" style="display:none; margin-top:16px; border-top:1px solid #E6E7E2; padding-top:16px;">
             <div>
                 <h3 style="display:flex; justify-content:space-between; align-items:center;">
                     <span>📊 Vitals</span>
@@ -200,7 +201,7 @@
             </div>
             <div style="margin-top:16px;">
                 <h3>📝 Nursing Note</h3>
-                <textarea id="nursing-note-text" rows="4" style="width:100%;padding:8px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;resize:vertical;"></textarea>
+                <textarea id="nursing-note-text" rows="4" style="width:100%;padding:8px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;resize:vertical;"></textarea>
             </div>
         </div>
         <div class="modal-footer">
@@ -221,7 +222,7 @@
             <p><strong>Ward:</strong> <span id="round-ward"></span> | <strong>Bed:</strong> <span id="round-bed"></span> | <strong>Day of admission:</strong> <span id="round-day"></span></p>
         </div>
         <div style="margin-bottom:16px;">
-            <h3 style="font-size:13px;color:#94a3b8;margin-bottom:6px;text-transform:uppercase;">💊 Currently Active Medications</h3>
+            <h3 style="font-size:13px;color:#667169;margin-bottom:6px;text-transform:uppercase;">💊 Currently Active Medications</h3>
             <div id="round-active-meds" style="font-size:13px;"></div>
         </div>
         <div style="margin-bottom:16px;">
@@ -229,12 +230,12 @@
             <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
                 <button id="round-start-btn" class="btn-primary">🎤 Start</button>
                 <button id="round-stop-btn" class="btn-secondary" style="display:none;">⏹ Stop</button>
-                <span id="round-mic-status" style="font-size:12px;color:#94a3b8;">Idle</span>
+                <span id="round-mic-status" style="font-size:12px;color:#667169;">Idle</span>
             </div>
-            <textarea id="round-transcript" rows="4" placeholder="Speak or type the round conversation..." style="width:100%;padding:8px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;resize:vertical;"></textarea>
-            <div id="round-status" style="font-size:13px;color:#22d3ee;min-height:20px;margin-top:6px;"></div>
+            <textarea id="round-transcript" rows="4" placeholder="Speak or type the round conversation..." style="width:100%;padding:8px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;resize:vertical;"></textarea>
+            <div id="round-status" style="font-size:13px;color:#2F6F52;min-height:20px;margin-top:6px;"></div>
         </div>
-        <div id="round-draft" style="display:none; margin-top:16px; border-top:1px solid #1e293b; padding-top:16px;">
+        <div id="round-draft" style="display:none; margin-top:16px; border-top:1px solid #E6E7E2; padding-top:16px;">
             <div class="form-group"><label>Chief Complaint / Findings</label><textarea id="round-chief-complaint"></textarea></div>
             <div class="form-group"><label>HPI / Progress Note</label><textarea id="round-hpi"></textarea></div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
@@ -245,11 +246,11 @@
                 <label>New / Updated Medications Today</label>
                 <div id="round-medications-list"></div>
                 <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
-                    <input id="round-med-drug" placeholder="Drug Name" style="flex:1;min-width:80px;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
-                    <input id="round-med-dose" placeholder="Dose" style="flex:1;min-width:60px;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
-                    <input id="round-med-frequency" placeholder="Frequency" style="flex:1;min-width:60px;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
-                    <select id="round-med-route" style="padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;"><option>Oral</option><option>IV</option><option>IM</option><option>SubQ</option><option>Topical</option></select>
-                    <input id="round-med-duration" placeholder="Duration" style="flex:1;min-width:60px;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
+                    <input id="round-med-drug" placeholder="Drug Name" style="flex:1;min-width:80px;padding:6px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;">
+                    <input id="round-med-dose" placeholder="Dose" style="flex:1;min-width:60px;padding:6px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;">
+                    <input id="round-med-frequency" placeholder="Frequency" style="flex:1;min-width:60px;padding:6px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;">
+                    <select id="round-med-route" style="padding:6px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;"><option>Oral</option><option>IV</option><option>IM</option><option>SubQ</option><option>Topical</option></select>
+                    <input id="round-med-duration" placeholder="Duration" style="flex:1;min-width:60px;padding:6px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;">
                     <button id="round-add-med-btn" class="btn-secondary">Add</button>
                 </div>
             </div>
@@ -257,19 +258,19 @@
                 <label>Lab Tests</label>
                 <div id="round-lab-list"></div>
                 <div style="display:flex; gap:6px;">
-                    <input id="round-lab-test" placeholder="Test name" style="flex:1;padding:6px;background:#0a0e17;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;">
+                    <input id="round-lab-test" placeholder="Test name" style="flex:1;padding:6px;background:#FBFAF7;border:1px solid #E6E7E2;border-radius:6px;color:#1C2621;">
                     <button id="round-add-lab-btn" class="btn-secondary">Add</button>
                 </div>
             </div>
             <div class="form-group"><label>Advice / Plan</label><textarea id="round-advice"></textarea></div>
-            <div id="round-interaction-section" style="display:none; margin-top:12px; border-top:1px solid #1e293b; padding-top:12px;">
+            <div id="round-interaction-section" style="display:none; margin-top:12px; border-top:1px solid #E6E7E2; padding-top:12px;">
                 <h3 style="font-size:14px;">⚠️ Drug Interaction Check (full regimen)</h3>
                 <div id="round-interaction-results"></div>
             </div>
         </div>
         <div class="modal-footer">
             <button class="btn-secondary" onclick="closeModal('ward-round-modal')">Cancel</button>
-            <button class="btn-primary" id="round-finalize-btn" style="display:none; background:linear-gradient(135deg, #34d399, #059669);">✅ Finalize &amp; Save</button>
+            <button class="btn-primary" id="round-finalize-btn" style="display:none; background:linear-gradient(135deg, #2F6F52, #234E39);">✅ Finalize &amp; Save</button>
         </div>
     </div>
 </div>
@@ -355,11 +356,11 @@ async function checkOllama() {
             const data = await res.json();
             const el = document.getElementById('ollama-status');
             if (data.groq_available !== undefined) {
-                el.textContent = data.groq_available ? `✅ Groq: ${data.groq_model}` : '❌ Groq not available';
-                el.style.color = data.groq_available ? '#34d399' : '#f87171';
+                el.textContent = data.groq_available ? '✅ AI Assistant Ready' : '❌ AI Assistant Unavailable';
+                el.style.color = data.groq_available ? '#2F6F52' : '#C1694F';
             } else {
                 el.textContent = '✅ AI Available';
-                el.style.color = '#34d399';
+                el.style.color = '#2F6F52';
             }
         }
     } catch(e) { document.getElementById('ollama-status').textContent = '❌ Backend unreachable'; }
@@ -405,7 +406,7 @@ async function loadDashboard() {
             <h3>${p.name}</h3>
             <div class="meta">${p.age || 'N/A'}y ${p.gender || ''} • ${p.ward} - Bed ${p.bed || ''}</div>
             <div class="meta">${p.diagnosis || 'No diagnosis'}</div>
-            <div class="meta">${p.assigned_nurse ? `👤 ${p.assigned_nurse.email}` : '<span style="color:#f87171;">⚠ Unassigned</span>'}</div>
+            <div class="meta">${p.assigned_nurse ? `👤 ${p.assigned_nurse.email}` : '<span style="color:#C1694F;">⚠ Unassigned</span>'}</div>
             ${p.latest_vital ? `
                 <div class="vital">
                     <span>BP: ${p.latest_vital.bp || '--'}</span>
@@ -413,9 +414,9 @@ async function loadDashboard() {
                     <span>Temp: ${p.latest_vital.temperature || '--'}°C</span>
                     <span>SpO2: ${p.latest_vital.oxygen_sat || '--'}%</span>
                 </div>
-                <div style="font-size:11px;color:#64748b;">Updated: ${new Date(p.latest_vital.recorded_at).toLocaleString()}</div>
+                <div style="font-size:11px;color:#93998F;">Updated: ${new Date(p.latest_vital.recorded_at).toLocaleString()}</div>
             ` : '<div class="vital">No vitals recorded</div>'}
-            <div class="meta">Pending Tasks: ${p.pending_tasks || 0}${p.overdue_tasks ? ` <span style="color:#f87171;">(${p.overdue_tasks} overdue)</span>` : ''}</div>
+            <div class="meta">Pending Tasks: ${p.pending_tasks || 0}${p.overdue_tasks ? ` <span style="color:#C1694F;">(${p.overdue_tasks} overdue)</span>` : ''}</div>
         </div>
     `).join('');
     const hasAbnormal = patients.some(p => p.abnormal);
@@ -444,19 +445,19 @@ function renderPatientList(filterText) {
             (p.bed || '').toLowerCase().includes(q))
         : allLoadedPatients;
     if (!allLoadedPatients || allLoadedPatients.length === 0) {
-        container.innerHTML = '<p style="color:#64748b;">No patients admitted.</p>';
+        container.innerHTML = '<p style="color:#93998F;">No patients admitted.</p>';
         return;
     }
     if (patients.length === 0) {
-        container.innerHTML = '<p style="color:#64748b;">No patients match your search.</p>';
+        container.innerHTML = '<p style="color:#93998F;">No patients match your search.</p>';
         return;
     }
     container.innerHTML = patients.map(p => `
         <div class="patient-list-item" onclick="showPatientDetail(${p.id})">
             <div><strong>${p.name}</strong> (${p.age || 'N/A'}y, ${p.gender || 'N/A'}) - ${p.ward} - Bed ${p.bed || ''}</div>
-            <div style="color:#94a3b8;">${p.diagnosis || ''}</div>
-            <div style="font-size:12px;color:${p.assigned_nurse ? '#64748b' : '#f87171'};">${p.assigned_nurse ? `Assigned to: ${p.assigned_nurse.email}` : '⚠ Unassigned'}</div>
-            <div style="font-size:12px;color:#64748b;">Pending Tasks: ${p.pending_tasks || 0}</div>
+            <div style="color:#667169;">${p.diagnosis || ''}</div>
+            <div style="font-size:12px;color:${p.assigned_nurse ? '#93998F' : '#C1694F'};">${p.assigned_nurse ? `Assigned to: ${p.assigned_nurse.email}` : '⚠ Unassigned'}</div>
+            <div style="font-size:12px;color:#93998F;">Pending Tasks: ${p.pending_tasks || 0}</div>
         </div>
     `).join('');
 }
@@ -484,7 +485,7 @@ async function showPatientDetail(patientId) {
                     <button class="btn-secondary" onclick="editPatient(${patient.id})">✎ Edit</button>
                 ` : ''}
                 ${(currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation') && patient.status === 'Active' ? `
-                    <button class="btn-secondary" style="color:#f87171;border-color:#7f1d1d;" onclick="dischargePatient(${patient.id})">🚪 Discharge</button>
+                    <button class="btn-secondary" style="color:#C1694F;border-color:#C1694F;" onclick="dischargePatient(${patient.id})">🚪 Discharge</button>
                 ` : ''}
                 ${currentUser.role === 'HeadNurse' && patient.assigned_nurse && patient.status === 'Active' ? `
                     <button class="btn-secondary" onclick="unassignPatient(${patient.id})">↩️ Unassign Nurse</button>
@@ -506,30 +507,30 @@ async function showPatientDetail(patientId) {
         </div>
         <div id="vitals-tab" class="tab-content">
             ${data.vitals.map(v => `
-                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;font-size:13px;">
+                <div style="background:#F3F2EE;padding:8px;border-radius:6px;margin-bottom:6px;font-size:13px;">
                     <span>${new Date(v.recorded_at).toLocaleString()}</span>
                     <span>BP ${v.bp_systolic ?? '--'}/${v.bp_diastolic ?? '--'} | HR ${v.heart_rate ?? '--'} | Temp ${v.temperature ?? '--'}°C | SpO2 ${v.oxygen_sat ?? '--'}%</span>
-                    <div style="font-size:11px;color:#64748b;">Recorded by: ${v.nurse_email || 'Nurse #' + v.nurse_id}</div>
-                    ${v.notes ? `<div style="font-size:12px;color:#94a3b8;">${v.notes}</div>` : ''}
+                    <div style="font-size:11px;color:#93998F;">Recorded by: ${v.nurse_email || 'Nurse #' + v.nurse_id}</div>
+                    ${v.notes ? `<div style="font-size:12px;color:#667169;">${v.notes}</div>` : ''}
                 </div>
-            `).join('') || '<p style="color:#64748b;">No vitals recorded.</p>'}
+            `).join('') || '<p style="color:#93998F;">No vitals recorded.</p>'}
         </div>
         <div id="tasks-tab" class="tab-content" style="display:none;">
             ${data.tasks.map(t => `
-                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;${t.is_overdue ? 'border-left:3px solid #dc2626;' : ''}">
-                    <div>${taskTypeBadge(t)} <strong>${t.description}</strong> - ${t.status} ${t.is_overdue ? '<span style="color:#f87171;">⏰ Overdue</span>' : ''}</div>
-                    <div style="font-size:12px;color:#94a3b8;">Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
-                    <div style="font-size:11px;color:#64748b;">Assigned to: ${t.nurse_email || (t.nurse_id ? 'Nurse #' + t.nurse_id : 'Unassigned')}</div>
-                    ${t.notes ? `<div style="font-size:12px;color:#94a3b8;">${t.notes}</div>` : ''}
+                <div style="background:#F3F2EE;padding:8px;border-radius:6px;margin-bottom:6px;${t.is_overdue ? 'border-left:3px solid #C1694F;' : ''}">
+                    <div>${taskTypeBadge(t)} <strong>${t.description}</strong> - ${t.status} ${t.is_overdue ? '<span style="color:#C1694F;">⏰ Overdue</span>' : ''}</div>
+                    <div style="font-size:12px;color:#667169;">Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
+                    <div style="font-size:11px;color:#93998F;">Assigned to: ${t.nurse_email || (t.nurse_id ? 'Nurse #' + t.nurse_id : 'Unassigned')}</div>
+                    ${t.notes ? `<div style="font-size:12px;color:#667169;">${t.notes}</div>` : ''}
                     ${t.status !== 'Completed' && (currentUser.role === 'HeadNurse' || (currentUser.role === 'Nurse' && t.nurse_id == currentUser.id)) ? `
                         <button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>
                     ` : ''}
                 </div>
-            `).join('') || '<p style="color:#64748b;">No tasks.</p>'}
+            `).join('') || '<p style="color:#93998F;">No tasks.</p>'}
         </div>
         <div id="consultations-tab" class="tab-content" style="display:none;">
             ${data.consultations.map(c => `
-                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;">
+                <div style="background:#F3F2EE;padding:8px;border-radius:6px;margin-bottom:6px;">
                     <div><strong>${c.case_id}</strong> - ${new Date(c.created_at).toLocaleString()}</div>
                     <div><strong>Chief Complaint:</strong> ${c.chief_complaint || 'N/A'}</div>
                     <div><strong>HPI:</strong> ${c.hpi || 'N/A'}</div>
@@ -538,16 +539,16 @@ async function showPatientDetail(patientId) {
                     <div><strong>Advice:</strong> ${c.advice || 'N/A'}</div>
                     <details><summary>Full Transcript</summary><pre style="font-size:12px;white-space:pre-wrap;">${c.raw_transcript || ''}</pre></details>
                 </div>
-            `).join('') || '<p style="color:#64748b;">No doctor\'s notes.</p>'}
+            `).join('') || '<p style="color:#93998F;">No doctor\'s notes.</p>'}
         </div>
         <div id="nursing-tab" class="tab-content" style="display:none;">
             ${data.nursing_notes.map(n => `
-                <div style="background:#0f172a;padding:8px;border-radius:6px;margin-bottom:6px;">
-                    <div style="font-size:12px;color:#94a3b8;">${new Date(n.created_at).toLocaleString()} by ${n.nurse_email || 'Nurse #' + n.nurse_id}</div>
+                <div style="background:#F3F2EE;padding:8px;border-radius:6px;margin-bottom:6px;">
+                    <div style="font-size:12px;color:#667169;">${new Date(n.created_at).toLocaleString()} by ${n.nurse_email || 'Nurse #' + n.nurse_id}</div>
                     <pre style="font-size:12px;white-space:pre-wrap;margin-top:4px;">${n.notes || ''}</pre>
-                    ${n.voice_transcript ? `<details><summary>Voice Transcript</summary><div style="font-size:12px;color:#94a3b8;">${n.voice_transcript}</div></details>` : ''}
+                    ${n.voice_transcript ? `<details><summary>Voice Transcript</summary><div style="font-size:12px;color:#667169;">${n.voice_transcript}</div></details>` : ''}
                 </div>
-            `).join('') || '<p style="color:#64748b;">No nursing notes.</p>'}
+            `).join('') || '<p style="color:#93998F;">No nursing notes.</p>'}
         </div>
         <div id="discharge-summary-tab" class="tab-content" style="display:none;">
             ${(currentUser.role === 'HeadNurse' || currentUser.role === 'NursingStation' || currentUser.role === 'Doctor') ? `
@@ -576,7 +577,7 @@ function renderDischargeSummary(summary) {
     const el = document.getElementById('discharge-summary-content');
     if (!el) return;
     if (!summary) {
-        el.innerHTML = '<p style="color:#64748b;">No discharge summary generated yet.</p>';
+        el.innerHTML = '<p style="color:#93998F;">No discharge summary generated yet.</p>';
         return;
     }
     const meds = (summary.medications_at_discharge || [])
@@ -584,8 +585,8 @@ function renderDischargeSummary(summary) {
         .filter(Boolean).join(', ') || 'None';
     el.innerHTML = `
         <button class="btn-secondary" onclick="printDischargeSummary()" style="margin-bottom:12px;">🖨️ Print / Save PDF</button>
-        <div style="background:#0f172a;padding:12px;border-radius:6px;font-size:13px;">
-            <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Generated ${new Date(summary.created_at).toLocaleString()}</div>
+        <div style="background:#F3F2EE;padding:12px;border-radius:6px;font-size:13px;">
+            <div style="font-size:11px;color:#93998F;margin-bottom:8px;">Generated ${new Date(summary.created_at).toLocaleString()}</div>
             <p><strong>Admission Summary:</strong> ${summary.admission_summary || 'N/A'}</p>
             <p style="margin-top:8px;"><strong>Hospital Course:</strong> ${summary.hospital_course || 'N/A'}</p>
             <p style="margin-top:8px;"><strong>Discharge Diagnosis:</strong> ${summary.discharge_diagnosis || 'N/A'}</p>
@@ -616,7 +617,7 @@ function printDischargeSummary() {
         modal.innerHTML = `
             <div class="modal-content">
                 <div class="modal-header"><h2>Discharge Summary</h2><button class="modal-close" onclick="closeModal('discharge-print-modal')">&times;</button></div>
-                <div id="discharge-print-preview" style="background:white;color:black;padding:32px;border-radius:8px;font-family:'Segoe UI',sans-serif;"></div>
+                <div id="discharge-print-preview" style="background:white;color:black;padding:32px;border-radius:8px;font-family:'Inter', -apple-system, sans-serif;"></div>
                 <div class="modal-footer">
                     <button onclick="closeModal('discharge-print-modal')" class="btn-secondary">Cancel</button>
                     <button onclick="window.print()" class="btn-primary">🖨️ Print / Save PDF</button>
@@ -627,60 +628,60 @@ function printDischargeSummary() {
     }
     document.getElementById('discharge-print-preview').innerHTML = `
         <div style="max-width:700px;margin:0 auto;font-size:11px;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #E6E7E2;padding-bottom:12px;margin-bottom:16px;">
                 <div>
                     <h2 style="font-size:18px;font-weight:700;margin:0;">${currentUser?.role || 'Clinician'}: ${currentUser?.email || ''}</h2>
-                    <p style="font-size:10px;color:#64748b;margin:2px 0 0;">Ward: ${patient.ward || 'N/A'} &middot; Bed: ${patient.bed || 'N/A'}</p>
+                    <p style="font-size:10px;color:#93998F;margin:2px 0 0;">Ward: ${patient.ward || 'N/A'} &middot; Bed: ${patient.bed || 'N/A'}</p>
                 </div>
                 <div style="text-align:right;">
                     <p style="font-size:13px;font-weight:700;margin:0;letter-spacing:0.5px;">AIVANA CLINICAL IPD</p>
-                    <p style="font-size:10px;color:#64748b;margin:2px 0 0;">Inpatient Department</p>
+                    <p style="font-size:10px;color:#93998F;margin:2px 0 0;">Inpatient Department</p>
                 </div>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;background:#f1f5f9;padding:12px;border-radius:6px;margin-bottom:16px;font-size:10px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;background:#F3F2EE;padding:12px;border-radius:6px;margin-bottom:16px;font-size:10px;">
                 <div><strong>PATIENT</strong><br>${patientName || 'N/A'}</div>
                 <div><strong>AGE/SEX</strong><br>${ageSex || 'N/A'}</div>
                 <div><strong>CASE RECORD NO</strong><br>${recordNo}</div>
                 <div><strong>ADMITTED / DISCHARGED</strong><br>${admitDate} &rarr; ${dischargeDate}</div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
-                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Admission Summary</strong>
+                <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;">
+                    <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Admission Summary</strong>
                     <p style="font-size:12px;margin:4px 0 0;">${summary.admission_summary || 'N/A'}</p>
                 </div>
-                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
-                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Hospital Course</strong>
+                <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;">
+                    <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Hospital Course</strong>
                     <p style="font-size:12px;margin:4px 0 0;">${summary.hospital_course || 'N/A'}</p>
                 </div>
             </div>
-            <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;margin-bottom:16px;">
-                <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Discharge Diagnosis</strong>
+            <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;margin-bottom:16px;">
+                <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Discharge Diagnosis</strong>
                 <p style="font-size:12px;font-weight:600;margin:4px 0 0;">${summary.discharge_diagnosis || 'N/A'}</p>
             </div>
             <div style="margin-bottom:16px;">
-                <div style="font-size:16px;font-weight:700;color:#0d9488;margin-bottom:6px;">Medications at Discharge</div>
+                <div style="font-size:16px;font-weight:700;color:#2F6F52;margin-bottom:6px;">Medications at Discharge</div>
                 ${medRows ? `
-                    <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid #e2e8f0;">
-                        <thead style="background:#f1f5f9;"><tr><th>#</th><th>Drug</th><th>Dose</th><th>Frequency</th><th>Duration</th></tr></thead>
+                    <table style="width:100%;border-collapse:collapse;font-size:11px;border:1px solid #1C2621;">
+                        <thead style="background:#F3F2EE;"><tr><th>#</th><th>Drug</th><th>Dose</th><th>Frequency</th><th>Duration</th></tr></thead>
                         <tbody>${medRows}</tbody>
                     </table>
-                ` : '<p style="color:#94a3b8;font-size:12px;">No medications at discharge.</p>'}
+                ` : '<p style="color:#667169;font-size:12px;">No medications at discharge.</p>'}
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
-                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Follow-up Instructions</strong>
+                <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;">
+                    <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Follow-up Instructions</strong>
                     <p style="font-size:12px;margin:4px 0 0;">${summary.follow_up_instructions || 'N/A'}</p>
                 </div>
-                <div style="border:1px solid #e2e8f0;padding:10px;border-radius:4px;">
-                    <strong style="color:#0d9488;font-size:10px;text-transform:uppercase;">Condition at Discharge</strong>
+                <div style="border:1px solid #1C2621;padding:10px;border-radius:4px;">
+                    <strong style="color:#2F6F52;font-size:10px;text-transform:uppercase;">Condition at Discharge</strong>
                     <p style="font-size:12px;margin:4px 0 0;">${summary.condition_at_discharge || 'N/A'}</p>
                 </div>
             </div>
-            <div style="border-top:1px solid #e2e8f0;padding-top:16px;margin-top:16px;display:flex;justify-content:space-between;font-size:9px;color:#94a3b8;">
+            <div style="border-top:1px solid #1C2621;padding-top:16px;margin-top:16px;display:flex;justify-content:space-between;font-size:9px;color:#667169;">
                 <span>*Digitally generated via AIVANA Clinical IPD Platform. Generated ${new Date(summary.created_at).toLocaleString()}</span>
                 <div style="text-align:right;">
-                    <div style="border-bottom:1px dashed #94a3b8;width:120px;margin:0 auto 4px;height:30px;"></div>
-                    <strong style="color:#1e293b;">${currentUser?.role || 'Clinician'}: ${currentUser?.email || ''}</strong>
+                    <div style="border-bottom:1px dashed #667169;width:120px;margin:0 auto 4px;height:30px;"></div>
+                    <strong style="color:#E6E7E2;">${currentUser?.role || 'Clinician'}: ${currentUser?.email || ''}</strong>
                 </div>
             </div>
         </div>
@@ -878,7 +879,7 @@ function renderVitals() {
     const container = document.getElementById('vital-list');
     container.innerHTML = '';
     if (extractedVitals.length === 0) {
-        container.innerHTML = '<div style="color:#64748b;font-size:13px;">No vitals extracted.</div>';
+        container.innerHTML = '<div style="color:#93998F;font-size:13px;">No vitals extracted.</div>';
         return;
     }
     extractedVitals.forEach((v, idx) => {
@@ -910,7 +911,7 @@ function renderLabs() {
     const container = document.getElementById('lab-list');
     container.innerHTML = '';
     if (extractedLabs.length === 0) {
-        container.innerHTML = '<div style="color:#64748b;font-size:13px;">No labs extracted.</div>';
+        container.innerHTML = '<div style="color:#93998F;font-size:13px;">No labs extracted.</div>';
         return;
     }
     extractedLabs.forEach((l, idx) => {
@@ -1167,7 +1168,7 @@ document.getElementById('task-submit').addEventListener('click', async () => {
 });
 function taskTypeBadge(t) {
     const icon = { Medication: '💊', Lab: '🧪', Observation: '👁️', General: '📋' }[t.task_type] || '📋';
-    const sourceColor = t.source === 'Auto' ? '#22d3ee' : '#94a3b8';
+    const sourceColor = t.source === 'Auto' ? '#2F6F52' : '#667169';
     return `<span title="${t.task_type || 'General'}">${icon}</span> <span style="font-size:10px;color:${sourceColor};border:1px solid ${sourceColor};border-radius:8px;padding:0 6px;">${t.source || 'Manual'}</span>`;
 }
 
@@ -1181,15 +1182,15 @@ async function loadTasks() {
     allTasks.sort((a, b) => (b.is_overdue === a.is_overdue) ? 0 : (b.is_overdue ? 1 : -1));
     const list = document.getElementById('task-list');
     list.innerHTML = allTasks.map(t => `
-        <div style="background:#111827;border:1px solid #1e293b;border-radius:8px;padding:12px;margin-bottom:8px;${t.is_overdue ? 'border-left:3px solid #dc2626;' : ''}">
-            <div>${taskTypeBadge(t)} <strong>${t.patient_name}</strong> - ${t.description} ${t.is_overdue ? '<span style="color:#f87171;">⏰ Overdue</span>' : ''}</div>
-            <div style="font-size:12px;color:#94a3b8;">Status: ${t.status} | Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
-            ${t.notes ? `<div style="font-size:12px;color:#94a3b8;">${t.notes}</div>` : ''}
+        <div style="background:#FFFFFF;border:1px solid #E6E7E2;border-radius:8px;padding:12px;margin-bottom:8px;${t.is_overdue ? 'border-left:3px solid #C1694F;' : ''}">
+            <div>${taskTypeBadge(t)} <strong>${t.patient_name}</strong> - ${t.description} ${t.is_overdue ? '<span style="color:#C1694F;">⏰ Overdue</span>' : ''}</div>
+            <div style="font-size:12px;color:#667169;">Status: ${t.status} | Due: ${t.due_date ? new Date(t.due_date).toLocaleString() : 'N/A'}</div>
+            ${t.notes ? `<div style="font-size:12px;color:#667169;">${t.notes}</div>` : ''}
             ${t.status !== 'Completed' && (currentUser.role === 'HeadNurse' || (currentUser.role === 'Nurse' && t.nurse_id == currentUser.id)) ? `
                 <button class="btn-secondary" onclick="updateTask(${t.id}, 'Completed')">Mark Complete</button>
             ` : ''}
         </div>
-    `).join('') || '<p style="color:#64748b;">No tasks.</p>';
+    `).join('') || '<p style="color:#93998F;">No tasks.</p>';
 }
 async function updateTask(taskId, status) {
     const res = await apiRequest(`/ipd/tasks/${taskId}`, {
@@ -1216,13 +1217,13 @@ let roundAccumulatedTranscript = '';
 function renderActiveMeds(meds) {
     const container = document.getElementById('round-active-meds');
     if (!meds || meds.length === 0) {
-        container.innerHTML = '<div style="color:#64748b;">No active medications on record.</div>';
+        container.innerHTML = '<div style="color:#93998F;">No active medications on record.</div>';
         return;
     }
     container.innerHTML = meds.map(m => `
         <div class="vital-item">
             <span style="flex:1;">${m.drugName || 'Unknown'} - ${m.dose || 'N/A'} - ${m.frequency || 'N/A'} - ${m.route || 'N/A'}</span>
-            <label style="font-size:12px;color:#f87171;display:flex;align-items:center;gap:4px;white-space:nowrap;">
+            <label style="font-size:12px;color:#C1694F;display:flex;align-items:center;gap:4px;white-space:nowrap;">
                 <input type="checkbox" data-drug="${(m.drugName || '').replace(/"/g, '&quot;')}" class="round-discontinue-cb"> Discontinue
             </label>
         </div>
@@ -1355,7 +1356,7 @@ function renderRoundMeds(meds) {
     const list = document.getElementById('round-medications-list');
     list.innerHTML = '';
     if (!meds || meds.length === 0) {
-        list.innerHTML = '<div class="medication-item"><span style="color:#64748b;">No new medications today.</span></div>';
+        list.innerHTML = '<div class="medication-item"><span style="color:#93998F;">No new medications today.</span></div>';
         return;
     }
     meds.forEach((m, i) => {
@@ -1402,7 +1403,7 @@ function renderRoundLabs(labs) {
     const list = document.getElementById('round-lab-list');
     list.innerHTML = '';
     if (!labs || labs.length === 0) {
-        list.innerHTML = '<div class="lab-item"><span style="color:#64748b;">No lab tests.</span></div>';
+        list.innerHTML = '<div class="lab-item"><span style="color:#93998F;">No lab tests.</span></div>';
         return;
     }
     labs.forEach(t => {
@@ -1445,11 +1446,11 @@ function renderRoundInteractions(interactions) {
     }
     section.style.display = 'block';
     container.innerHTML = interactions.map(i => `
-        <div class="interaction-item ${i.severity ? i.severity.toLowerCase() : ''}" style="background:#1e293b;padding:8px 12px;border-radius:6px;margin-bottom:6px;border-left:4px solid ${i.severity === 'Severe' ? '#dc2626' : i.severity === 'Moderate' ? '#f59e0b' : '#22d3ee'};">
+        <div class="interaction-item ${i.severity ? i.severity.toLowerCase() : ''}" style="background:#E6E7E2;padding:8px 12px;border-radius:6px;margin-bottom:6px;border-left:4px solid ${i.severity === 'Severe' ? '#C1694F' : i.severity === 'Moderate' ? '#8A5B22' : '#2F6F52'};">
             <div style="font-weight:bold;">${i.drug_pair || 'Unknown pair'}</div>
             <div style="font-size:12px;">Severity: ${i.severity || 'Unknown'}</div>
-            <div style="font-size:12px;color:#94a3b8;">Reason: ${i.reason || 'No reason provided'}</div>
-            <div style="font-size:12px;color:#34d399;">Recommendation: ${i.recommendation || 'Consult pharmacist'}</div>
+            <div style="font-size:12px;color:#667169;">Reason: ${i.reason || 'No reason provided'}</div>
+            <div style="font-size:12px;color:#2F6F52;">Recommendation: ${i.recommendation || 'Consult pharmacist'}</div>
         </div>
     `).join('');
 }

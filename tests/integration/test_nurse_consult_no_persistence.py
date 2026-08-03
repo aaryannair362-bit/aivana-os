@@ -14,6 +14,7 @@ in the chart. Fixed by making nurse-consult a pure extraction/preview endpoint w
 import pytest
 
 from tests.conftest import mock_groq_json
+from app import lab_test_matcher
 
 
 @pytest.fixture
@@ -69,7 +70,9 @@ def test_process_returns_extracted_data_for_review(client, nurse, patient_id, au
     assert resp.status_code == 200
     data = resp.json()
     assert data["vitals"] == [{"parameter": "BP", "value": "120/80", "unit": "mmHg"}]
-    assert data["labs"] == [{"test": "WBC", "result": "8000"}]
+    # "WBC" is normalized to its canonical test name ("Total Leucocyte Count") by
+    # app/lab_test_matcher.py -- see that module's own tests for correctness in isolation.
+    assert data["labs"] == [{"test": "Total Leucocyte Count", "result": "8000", "original_test": "WBC"}]
     assert data["nursing_note"]["subjective"] == "Cough"
 
 

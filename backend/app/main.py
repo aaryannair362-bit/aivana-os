@@ -1,3 +1,4 @@
+import csv
 import json
 import re
 import uuid
@@ -21,6 +22,8 @@ from .auth import (
     decode_token, log_audit, is_admin, is_head_nurse, is_nursing_station, is_nurse
 )
 from .scribe import scribe
+from . import drug_matcher
+from . import lab_test_matcher
 from .migrations import run_additive_migrations
 from .tasks_engine import (
     generate_tasks_from_consultation, get_active_medications,
@@ -1492,13 +1495,16 @@ Example:
     if not result:
         result = {"vitals": [], "labs": [], "nursing_note": {}}
     nursing_data = result.get("nursing_note", {}) or {}
+    # Same drug/lab-name normalization scribe_transcript applies to OPD/round prescriptions --
+    # a nurse's spoken "CBC" or "Widal" shouldn't come back misspelled either.
+    labs = lab_test_matcher.correct_lab_test_entries(result.get("labs", []), key="test")
     # NOTE: this endpoint is a preview/extraction step only -- it must NOT write to the
     # database. The frontend flow is mic -> Process (this endpoint) -> nurse reviews/edits ->
     # Save (POST /api/ipd/vitals + POST /api/nursing-notes persist the reviewed data). This
     # endpoint used to insert a Vital per extracted item and a NursingNote immediately, before
     # any review -- so every consult left a raw, unreviewed, un-deletable duplicate in the
     # chart even if the nurse edited the draft (or discarded it) before Save. See CHANGELOG.md.
-    return {"message": "Extracted for review", "vitals": result.get("vitals", []), "labs": result.get("labs", []), "nursing_note": nursing_data}
+    return {"message": "Extracted for review", "vitals": result.get("vitals", []), "labs": labs, "nursing_note": nursing_data}
 
 @app.post("/api/drug-interactions")
 async def drug_interactions(request: Request, current_user: dict = Depends(get_current_user)):
@@ -1515,6 +1521,106 @@ async def drug_interactions(request: Request, current_user: dict = Depends(get_c
     # report "no interactions found" regardless of input).
     interactions = await run_in_threadpool(check_drug_interactions, drug_names)
     return {"interactions": interactions}
+
+def _read_custom_csv(path, fieldnames):
+    if not path.exists():
+        return []
+    with open(path, newline="", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+def _write_custom_csv(path, fieldnames, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+MEDICINE_CUSTOM_FIELDS = ["id", "name", "added_by", "added_at"]
+LAB_TEST_CUSTOM_FIELDS = ["id", "test_name", "common_alias", "department", "specimen", "added_by", "added_at"]
+
+@app.get("/api/admin/medicines")
+def list_custom_medicines(current_user: dict = Depends(get_current_user)):
+    """Admin-managed supplement to the ~249k-entry bundled medicine dataset (drug_matcher.py) --
+    lets an Admin add a real product that's missing, without hand-editing the huge source CSV.
+    New rows are matchable immediately (drug_matcher.invalidate_cache() on every add/delete)."""
+    if not is_admin(current_user):
+        raise HTTPException(403, "Only Admin can manage the medicine list")
+    return _read_custom_csv(drug_matcher.CUSTOM_DATA_PATH, MEDICINE_CUSTOM_FIELDS)
+
+@app.post("/api/admin/medicines")
+async def add_custom_medicine(request: Request, current_user: dict = Depends(get_current_user)):
+    if not is_admin(current_user):
+        raise HTTPException(403, "Only Admin can manage the medicine list")
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    rows = _read_custom_csv(drug_matcher.CUSTOM_DATA_PATH, MEDICINE_CUSTOM_FIELDS)
+    if any(r["name"].strip().lower() == name.lower() for r in rows):
+        raise HTTPException(400, "This medicine is already in the custom list")
+    next_id = max([int(r["id"]) for r in rows], default=0) + 1
+    new_row = {"id": str(next_id), "name": name, "added_by": current_user.get("email", ""),
+               "added_at": datetime.utcnow().isoformat()}
+    rows.append(new_row)
+    _write_custom_csv(drug_matcher.CUSTOM_DATA_PATH, MEDICINE_CUSTOM_FIELDS, rows)
+    drug_matcher.invalidate_cache()
+    return new_row
+
+@app.delete("/api/admin/medicines/{entry_id}")
+def delete_custom_medicine(entry_id: int, current_user: dict = Depends(get_current_user)):
+    if not is_admin(current_user):
+        raise HTTPException(403, "Only Admin can manage the medicine list")
+    rows = _read_custom_csv(drug_matcher.CUSTOM_DATA_PATH, MEDICINE_CUSTOM_FIELDS)
+    remaining = [r for r in rows if int(r["id"]) != entry_id]
+    if len(remaining) == len(rows):
+        raise HTTPException(404, "Entry not found")
+    _write_custom_csv(drug_matcher.CUSTOM_DATA_PATH, MEDICINE_CUSTOM_FIELDS, remaining)
+    drug_matcher.invalidate_cache()
+    return {"message": "Removed"}
+
+@app.get("/api/admin/lab-tests")
+def list_custom_lab_tests(current_user: dict = Depends(get_current_user)):
+    """Same idea as /api/admin/medicines, for the 195-entry lab test master
+    (lab_test_matcher.py) -- add a missing test/alias without touching the source CSV."""
+    if not is_admin(current_user):
+        raise HTTPException(403, "Only Admin can manage the lab test list")
+    return _read_custom_csv(lab_test_matcher.CUSTOM_DATA_PATH, LAB_TEST_CUSTOM_FIELDS)
+
+@app.post("/api/admin/lab-tests")
+async def add_custom_lab_test(request: Request, current_user: dict = Depends(get_current_user)):
+    if not is_admin(current_user):
+        raise HTTPException(403, "Only Admin can manage the lab test list")
+    body = await request.json()
+    test_name = (body.get("test_name") or "").strip()
+    if not test_name:
+        raise HTTPException(400, "test_name is required")
+    rows = _read_custom_csv(lab_test_matcher.CUSTOM_DATA_PATH, LAB_TEST_CUSTOM_FIELDS)
+    if any(r["test_name"].strip().lower() == test_name.lower() for r in rows):
+        raise HTTPException(400, "This test is already in the custom list")
+    next_id = max([int(r["id"]) for r in rows], default=0) + 1
+    new_row = {
+        "id": str(next_id), "test_name": test_name,
+        "common_alias": (body.get("common_alias") or "").strip(),
+        "department": (body.get("department") or "").strip(),
+        "specimen": (body.get("specimen") or "").strip(),
+        "added_by": current_user.get("email", ""), "added_at": datetime.utcnow().isoformat(),
+    }
+    rows.append(new_row)
+    _write_custom_csv(lab_test_matcher.CUSTOM_DATA_PATH, LAB_TEST_CUSTOM_FIELDS, rows)
+    lab_test_matcher.invalidate_cache()
+    return new_row
+
+@app.delete("/api/admin/lab-tests/{entry_id}")
+def delete_custom_lab_test(entry_id: int, current_user: dict = Depends(get_current_user)):
+    if not is_admin(current_user):
+        raise HTTPException(403, "Only Admin can manage the lab test list")
+    rows = _read_custom_csv(lab_test_matcher.CUSTOM_DATA_PATH, LAB_TEST_CUSTOM_FIELDS)
+    remaining = [r for r in rows if int(r["id"]) != entry_id]
+    if len(remaining) == len(rows):
+        raise HTTPException(404, "Entry not found")
+    _write_custom_csv(lab_test_matcher.CUSTOM_DATA_PATH, LAB_TEST_CUSTOM_FIELDS, remaining)
+    lab_test_matcher.invalidate_cache()
+    return {"message": "Removed"}
 
 @app.get("/api/health")
 def health():

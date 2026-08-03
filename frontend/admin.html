@@ -5,24 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Panel</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0a0e17; color: #e2e8f0; padding: 20px; }
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap');
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', -apple-system, system-ui, sans-serif; background: #FBFAF7; color: #1C2621; padding: 20px; }
         .container { max-width: 1000px; margin: 0 auto; }
-        h1 { color: #22d3ee; margin-bottom: 20px; }
+        h1 { color: #2F6F52; margin-bottom: 20px; }
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
-        table { width: 100%; border-collapse: collapse; background: #111827; border-radius: 12px; overflow: hidden; }
-        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #1e293b; }
-        th { background: #0f172a; color: #94a3b8; font-weight: 600; }
-        select, button, input { padding: 6px 12px; border-radius: 6px; border: 1px solid #1e293b; background: #0f172a; color: #e2e8f0; }
-        .btn-primary { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #0a0e17; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; background: #FFFFFF; border-radius: 12px; overflow: hidden; }
+        th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid #E6E7E2; }
+        th { background: #F3F2EE; color: #667169; font-weight: 600; }
+        select, button, input { padding: 6px 12px; border-radius: 6px; border: 1px solid #E6E7E2; background: #F3F2EE; color: #1C2621; }
+        .btn-primary { background: linear-gradient(135deg, #2F6F52, #234E39); color: #FBFAF7; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
         .btn-primary:hover { opacity: 0.9; }
-        .btn-outline { background: transparent; border: 1px solid #334155; padding: 8px 16px; border-radius: 8px; color: #94a3b8; cursor: pointer; }
-        .btn-outline:hover { border-color: #64748b; color: #e2e8f0; }
+        .btn-outline { background: transparent; border: 1px solid #E6E7E2; padding: 8px 16px; border-radius: 8px; color: #667169; cursor: pointer; }
+        .btn-outline:hover { border-color: #93998F; color: #1C2621; }
         .flex { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
         .flex input, .flex select { flex: 1; min-width: 150px; }
         .message { margin: 8px 0; padding: 8px; border-radius: 6px; }
-        .success { color: #34d399; background: #0a2e1a; }
-        .error { color: #f87171; background: #2e0a0a; }
+        .success { color: #2F6F52; background: #E6F1EA; }
+        .error { color: #C1694F; background: #F7E4DE; }
     </style>
 </head>
 <body>
@@ -45,12 +46,44 @@
         </select>
         <input type="text" id="new-password" placeholder="Password (or leave blank to auto-generate)" />
         <button id="create-user-btn" class="btn-primary">Create User</button>
-        <button id="refresh-btn" class="btn-primary" style="background:linear-gradient(135deg, #06b6d4, #0891b2);">Refresh</button>
+        <button id="refresh-btn" class="btn-primary" style="background:linear-gradient(135deg, #2F6F52, #234E39);">Refresh</button>
     </div>
     <div id="message" class="message" style="display:none;"></div>
     <table>
         <thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th></tr></thead>
         <tbody id="user-table-body"></tbody>
+    </table>
+
+    <h1 style="margin-top:32px;">💊 Medicine List</h1>
+    <p style="color:#667169;margin-bottom:12px;">
+        Prescriptions are auto-corrected against a ~249,000-entry medicine database. If a real
+        product is missing (so it's never getting matched/corrected), add it here -- it's usable
+        immediately, no restart needed.
+    </p>
+    <div class="flex">
+        <input type="text" id="new-medicine-name" placeholder="Full product name, e.g. &quot;Zanocin 200 Tablet&quot;" />
+        <button id="add-medicine-btn" class="btn-primary">Add Medicine</button>
+    </div>
+    <table>
+        <thead><tr><th>Name</th><th>Added By</th><th>Added At</th><th>Action</th></tr></thead>
+        <tbody id="medicine-table-body"></tbody>
+    </table>
+
+    <h1 style="margin-top:32px;">🧪 Lab Test List</h1>
+    <p style="color:#667169;margin-bottom:12px;">
+        Recommended lab tests are auto-corrected against the 195-test lab master (test name +
+        common alias, e.g. "CBC" -> "Complete Blood Count"). Add a missing test here.
+    </p>
+    <div class="flex">
+        <input type="text" id="new-lab-test-name" placeholder="Test name, e.g. &quot;Serum Ammonia&quot;" />
+        <input type="text" id="new-lab-test-alias" placeholder="Common alias (optional), e.g. &quot;NH3&quot;" />
+        <input type="text" id="new-lab-test-department" placeholder="Department (optional)" />
+        <input type="text" id="new-lab-test-specimen" placeholder="Specimen (optional)" />
+        <button id="add-lab-test-btn" class="btn-primary">Add Lab Test</button>
+    </div>
+    <table>
+        <thead><tr><th>Test Name</th><th>Common Alias</th><th>Department</th><th>Specimen</th><th>Added By</th><th>Action</th></tr></thead>
+        <tbody id="lab-test-table-body"></tbody>
     </table>
 </div>
 <script>
@@ -116,7 +149,7 @@ async function loadUsers() {
             const users = await res.json();
             const tbody = document.getElementById('user-table-body');
             if (!users || users.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#64748b;">No users found</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#93998F;">No users found</td></tr>`;
                 return;
             }
             tbody.innerHTML = users.map(u => `
@@ -196,7 +229,97 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     localStorage.clear();
     window.location.href = '/index.html';
 });
-verifyAdmin().then(loadUsers);
+
+// ---- Custom Medicine List ----
+async function loadCustomMedicines() {
+    const res = await apiRequest('/admin/medicines');
+    const tbody = document.getElementById('medicine-table-body');
+    if (!res.ok) { tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#93998F;">Failed to load</td></tr>`; return; }
+    const rows = await res.json();
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#93998F;">No custom medicines added yet</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(r => `
+        <tr>
+            <td>${r.name}</td>
+            <td>${r.added_by || ''}</td>
+            <td>${r.added_at ? new Date(r.added_at).toLocaleString() : ''}</td>
+            <td><button class="btn-outline delete-medicine" data-id="${r.id}">Remove</button></td>
+        </tr>
+    `).join('');
+    document.querySelectorAll('.delete-medicine').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const res = await apiRequest(`/admin/medicines/${btn.dataset.id}`, { method: 'DELETE' });
+            if (res.ok) { showMessage('Medicine removed', 'success'); loadCustomMedicines(); }
+            else showMessage('Failed to remove medicine', 'error');
+        });
+    });
+}
+document.getElementById('add-medicine-btn').addEventListener('click', async () => {
+    const name = document.getElementById('new-medicine-name').value.trim();
+    if (!name) { showMessage('Please enter a medicine name', 'error'); return; }
+    const res = await apiRequest('/admin/medicines', { method: 'POST', body: JSON.stringify({ name }) });
+    if (res.ok) {
+        showMessage(`✅ "${name}" added -- usable immediately in prescriptions`, 'success');
+        document.getElementById('new-medicine-name').value = '';
+        loadCustomMedicines();
+    } else {
+        const err = await res.json().catch(() => ({}));
+        showMessage(err.detail || 'Failed to add medicine', 'error');
+    }
+});
+
+// ---- Custom Lab Test List ----
+async function loadCustomLabTests() {
+    const res = await apiRequest('/admin/lab-tests');
+    const tbody = document.getElementById('lab-test-table-body');
+    if (!res.ok) { tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#93998F;">Failed to load</td></tr>`; return; }
+    const rows = await res.json();
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#93998F;">No custom lab tests added yet</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(r => `
+        <tr>
+            <td>${r.test_name}</td>
+            <td>${r.common_alias || ''}</td>
+            <td>${r.department || ''}</td>
+            <td>${r.specimen || ''}</td>
+            <td>${r.added_by || ''}</td>
+            <td><button class="btn-outline delete-lab-test" data-id="${r.id}">Remove</button></td>
+        </tr>
+    `).join('');
+    document.querySelectorAll('.delete-lab-test').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const res = await apiRequest(`/admin/lab-tests/${btn.dataset.id}`, { method: 'DELETE' });
+            if (res.ok) { showMessage('Lab test removed', 'success'); loadCustomLabTests(); }
+            else showMessage('Failed to remove lab test', 'error');
+        });
+    });
+}
+document.getElementById('add-lab-test-btn').addEventListener('click', async () => {
+    const test_name = document.getElementById('new-lab-test-name').value.trim();
+    if (!test_name) { showMessage('Please enter a test name', 'error'); return; }
+    const common_alias = document.getElementById('new-lab-test-alias').value.trim();
+    const department = document.getElementById('new-lab-test-department').value.trim();
+    const specimen = document.getElementById('new-lab-test-specimen').value.trim();
+    const res = await apiRequest('/admin/lab-tests', {
+        method: 'POST',
+        body: JSON.stringify({ test_name, common_alias, department, specimen }),
+    });
+    if (res.ok) {
+        showMessage(`✅ "${test_name}" added -- usable immediately`, 'success');
+        ['new-lab-test-name', 'new-lab-test-alias', 'new-lab-test-department', 'new-lab-test-specimen']
+            .forEach(id => document.getElementById(id).value = '');
+        loadCustomLabTests();
+    } else {
+        const err = await res.json().catch(() => ({}));
+        showMessage(err.detail || 'Failed to add lab test', 'error');
+    }
+});
+
+verifyAdmin().then(() => { loadUsers(); loadCustomMedicines(); loadCustomLabTests(); });
 </script>
 </body>
 </html>
