@@ -19,6 +19,7 @@ class ScribeEngine:
     def __init__(self):
         self.api_key = settings.GROQ_API_KEY
         self.model = settings.GROQ_MODEL
+        self.audio_model = settings.GROQ_AUDIO_MODEL
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
         self._reasoning_format_supported = True
         logger.info("GROQ_API_KEY present: %s, length: %d, model: %s",
@@ -39,7 +40,42 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
 5. Handle spoken names, medicines, or measurements gracefully
 6. CLINICAL FINDINGS IN HPI: Any clinical findings mentioned MUST be explicitly included in the "hpi" field"""
 
-    def _call_groq_api(self, prompt: str, system: str = None, temperature: float = 0.3, _retry: int = 0) -> str:
+    def _post_with_retry(self, url: str, request_kwargs: dict, _retry: int = 0) -> dict:
+        """
+        Shared POST-with-429-backoff-retry and PHI-safe error logging for any Groq REST
+        call (chat completions or audio translations) -- owns only the retry/error envelope,
+        not the payload shape, so `request_kwargs` (headers/json/files/data/timeout/...) is
+        passed straight through to `requests.post` unexamined. Returns the parsed JSON body.
+        """
+        try:
+            response = requests.post(url, **request_kwargs)
+            if response.status_code == 429 and _retry < MAX_RATE_LIMIT_RETRIES:
+                # A 429 here used to fall straight through to _generate_json's fallback --
+                # silently degrading a real consultation to an empty draft on nothing more
+                # than a transient rate-limit blip. Retry_after gives transient limiting a
+                # real chance to clear before giving up -- but MUST be capped: verified live,
+                # under sustained quota pressure Groq's Retry-After can be minutes (even
+                # 25+ minutes), and honoring that literally would hang a single doctor's
+                # consultation request for that long. Capping means we sometimes retry before
+                # the server says we're truly clear (and get 429'd again, consuming another
+                # attempt), which is the right tradeoff -- a slightly wasted retry beats
+                # blocking a real request for tens of minutes.
+                retry_after = response.headers.get("retry-after")
+                wait = min(float(retry_after), 20) if retry_after else min(3 * (2 ** _retry), 20)
+                logger.warning("Groq 429 rate limited, retrying in %.1fs (attempt %d/%d)",
+                               wait, _retry + 1, MAX_RATE_LIMIT_RETRIES)
+                time.sleep(wait)
+                return self._post_with_retry(url, request_kwargs, _retry=_retry + 1)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error("Groq API error: %s", e)
+            if hasattr(e, 'response') and e.response is not None:
+                # response body can echo request content back (PHI) -- debug-only
+                logger.debug("Response body: %s", e.response.text)
+            raise
+
+    def _call_groq_api(self, prompt: str, system: str = None, temperature: float = 0.3) -> str:
         if not self.api_key:
             raise ValueError("Groq API key not configured. Set GROQ_API_KEY in environment.")
 
@@ -67,39 +103,58 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
             payload["reasoning_format"] = "hidden"
 
         try:
-            response = requests.post(self.base_url, headers=headers, json=payload, timeout=60)
+            data = self._post_with_retry(self.base_url, {"headers": headers, "json": payload, "timeout": 60})
+        except requests.exceptions.RequestException as e:
+            response = getattr(e, "response", None)
             if (
-                response.status_code == 400 and self._reasoning_format_supported
-                and "reasoning_format" in response.text
+                self._reasoning_format_supported and response is not None
+                and response.status_code == 400 and "reasoning_format" in response.text
             ):
                 self._reasoning_format_supported = False
-                return self._call_groq_api(prompt, system, temperature, _retry=_retry)
-            if response.status_code == 429 and _retry < MAX_RATE_LIMIT_RETRIES:
-                # A 429 here used to fall straight through to _generate_json's fallback --
-                # silently degrading a real consultation to an empty draft on nothing more
-                # than a transient rate-limit blip. Retry_after gives transient limiting a
-                # real chance to clear before giving up -- but MUST be capped: verified live,
-                # under sustained quota pressure Groq's Retry-After can be minutes (even
-                # 25+ minutes), and honoring that literally would hang a single doctor's
-                # consultation request for that long. Capping means we sometimes retry before
-                # the server says we're truly clear (and get 429'd again, consuming another
-                # attempt), which is the right tradeoff -- a slightly wasted retry beats
-                # blocking a real request for tens of minutes.
-                retry_after = response.headers.get("retry-after")
-                wait = min(float(retry_after), 20) if retry_after else min(3 * (2 ** _retry), 20)
-                logger.warning("Groq 429 rate limited, retrying in %.1fs (attempt %d/%d)",
-                               wait, _retry + 1, MAX_RATE_LIMIT_RETRIES)
-                time.sleep(wait)
-                return self._call_groq_api(prompt, system, temperature, _retry=_retry + 1)
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
-        except requests.exceptions.RequestException as e:
-            logger.error("Groq API error: %s", e)
-            if hasattr(e, 'response') and e.response:
-                # response body can echo request content back (PHI) -- debug-only
-                logger.debug("Response body: %s", e.response.text)
+                return self._call_groq_api(prompt, system, temperature)
             raise
+        return data["choices"][0]["message"]["content"]
+
+    def transcribe_audio(self, audio_bytes: bytes, content_type: str, filename: str) -> str:
+        """
+        Translates spoken audio to English text via Groq's Whisper (/audio/translations,
+        not /audio/transcriptions) -- deliberately always-English output rather than
+        transcription-in-original-language, because doctors/nurses here speak code-switched
+        Hindi+English (Hinglish): a language="hi" transcription would force the WHOLE output
+        into Devanagari script, garbling the embedded English drug names and dosage
+        abbreviations (mg/ml/TDS/BD/OD) the rest of this pipeline assumes are English.
+        Translation mode transcribes English portions as-is and translates Hindi portions to
+        English, which is what the downstream scribe_transcript()/drug_matcher/
+        lab_test_matcher pipeline needs. Never logs audio_bytes or the transcribed text
+        (see module docstring's PHI note) -- errors propagate to the caller un-logged-in-detail
+        by _post_with_retry, same as _call_groq_api.
+        """
+        if not self.api_key:
+            raise ValueError("Groq API key not configured. Set GROQ_API_KEY in environment.")
+
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        files = {"file": (filename, audio_bytes, content_type)}
+        data = {
+            "model": self.audio_model,
+            "response_format": "json",
+            # Biases Whisper's vocabulary toward the domain it'll actually see, without
+            # constraining language -- improves recognition of drug names/dosage shorthand
+            # that a generic model would otherwise be prone to mis-hearing.
+            "prompt": (
+                "Indian outpatient clinical consultation, mixed Hindi and English (Hinglish) "
+                "speech. Contains medicine names, dosages, and abbreviations such as mg, ml, "
+                "TDS, BD, OD, HS."
+            ),
+        }
+        result = self._post_with_retry(
+            "https://api.groq.com/openai/v1/audio/translations",
+            {"headers": headers, "files": files, "data": data, "timeout": 90},
+        )
+        # Groq's /audio/translations response shape is {"text": str} -- NOT {"transcript":...}
+        # like this app's own /api/scribe response, and totally unrelated to the
+        # chat-completions {"choices":[{"message":{"content":...}}]} shape _call_groq_api
+        # parses. Easy to get wrong by habit; there is no shared precedent in this file.
+        return (result.get("text") or "").strip()
 
     def _generate_json(self, prompt: str, system: str = None, temperature: float = 0.3) -> dict:
         try:

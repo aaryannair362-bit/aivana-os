@@ -17,13 +17,12 @@ regenerate every case with real model output.
 """
 import json
 import os
-import re
 import time
 
 import pytest
 import requests
 
-from tests.e2e.conftest import fire_speech_result, mint_tokens, set_tokens_in_browser
+from tests.e2e.conftest import mint_tokens, queue_transcription_result, set_tokens_in_browser
 from tests.scenarios.curated_use_cases import IPD_USE_CASES, OPD_USE_CASES
 
 pytestmark = pytest.mark.e2e
@@ -62,17 +61,6 @@ def _write_text(path, text):
         f.write(text or "")
 
 
-def _chunk_transcript(transcript: str, n: int = 4):
-    """Split a transcript into a few pieces to simulate natural multi-utterance speech
-    (a real consultation is spoken in turns, not delivered as one giant blob)."""
-    sentences = re.split(r"(?<=[।.!?॥])\s+", transcript.strip())
-    sentences = [s for s in sentences if s]
-    if len(sentences) <= n:
-        return sentences or [transcript]
-    chunk_size = max(1, len(sentences) // n)
-    return [" ".join(sentences[i:i + chunk_size]) for i in range(0, len(sentences), chunk_size)]
-
-
 # ---------------------------------------------------------------------------
 # OPD use cases: real voice-simulated "Start Consultation -> speak -> Stop" flow.
 # ---------------------------------------------------------------------------
@@ -102,6 +90,11 @@ def test_generate_opd_output(js_page, live_server_url, opd_doctor_and_patient, m
     if not LIVE_GROQ_AVAILABLE:
         raw = json.dumps(case["synthetic_extraction"])
         monkeypatch.setattr(app_main.scribe, "_call_groq_api", lambda *a, **k: raw)
+    # Whisper transcription is never live here regardless of LIVE_GROQ_AVAILABLE -- these
+    # curated cases are text transcripts, not real recorded audio, so there is nothing for a
+    # real Whisper call to transcribe. The canned transcript stands in for "what Whisper would
+    # have returned," the same role the old chunked SpeechRecognition mock events used to play.
+    queue_transcription_result(monkeypatch, app_main, case["transcript"])
 
     tokens = mint_tokens(doctor)
     set_tokens_in_browser(js_page, live_server_url, tokens["access_token"], tokens["refresh_token"])
@@ -112,9 +105,6 @@ def test_generate_opd_output(js_page, live_server_url, opd_doctor_and_patient, m
 
     js_page.click("#start-consult-btn")
     js_page.wait_for_timeout(150)
-    for chunk in _chunk_transcript(case["transcript"]):
-        fire_speech_result(js_page, chunk)
-        js_page.wait_for_timeout(80)
     js_page.click("#stop-consult-btn")
     js_page.wait_for_timeout(1500 if LIVE_GROQ_AVAILABLE else 800)
 
@@ -194,14 +184,16 @@ def test_generate_ipd_output(js_page, live_server_url, ipd_ward_setup, monkeypat
         if not LIVE_GROQ_AVAILABLE:
             raw = json.dumps({"subjective": note_text, "objective": "", "assessment": "", "plan": ""})
             monkeypatch.setattr(app_main.scribe, "_call_groq_api", lambda *a, **k: raw)
+        # Same reasoning as the OPD case above: always canned, never live, since there's no
+        # real audio for these text-authored notes.
+        queue_transcription_result(monkeypatch, app_main, note_text)
 
         js_page.evaluate(f"openNursingConsult({patient_id})")
         js_page.wait_for_timeout(150)
         js_page.click("#nursing-voice-btn", force=True)
         js_page.wait_for_timeout(80)
-        for chunk in _chunk_transcript(note_text, n=2):
-            fire_speech_result(js_page, chunk)
-            js_page.wait_for_timeout(80)
+        js_page.click("#nursing-voice-btn", force=True)  # stop -> upload -> transcribe
+        js_page.wait_for_timeout(300 if LIVE_GROQ_AVAILABLE else 200)
         js_page.click("#nursing-process-btn")
         js_page.wait_for_timeout(1200 if LIVE_GROQ_AVAILABLE else 600)
 

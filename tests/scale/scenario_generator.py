@@ -1,9 +1,10 @@
 """
 Deterministic combinatorial scenario generator for the large-scale voice-input test run.
 
-Every scenario ultimately becomes one or more spoken "utterances" fed through the mocked
-SpeechRecognition event pipeline in tests/_voice_helpers.py -- never a raw transcript posted
-directly to the API. English utterances are built from per-specialty templates (parameterized
+Every scenario ultimately becomes one or more spoken "utterances" fed through the real voice
+UI with the mocked MediaRecorder / canned-transcription pipeline in tests/_voice_helpers.py --
+never a raw transcript posted directly to the API. English utterances are built from
+per-specialty templates (parameterized
 so thousands of cases aren't copies of the same sentence); multilingual coverage reuses the
 real, hand-authored transcripts in tests/scenarios/curated_use_cases.py (extended with the same
 demographic/medication/day-count variation applied to the English templates) rather than

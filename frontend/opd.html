@@ -222,13 +222,6 @@
                                     <option value="Punjabi">Punjabi</option>
                                 </select>
                             </div>
-                            <div>
-                                <label class="field-label">Live Mode</label>
-                                <label style="display:flex; align-items:center; gap:10px; height:36px; cursor:pointer;">
-                                    <input type="checkbox" id="live-mode" checked style="width:16px;height:16px;" />
-                                    <span class="row-sub" style="margin-top:0;">Show transcript live as you speak</span>
-                                </label>
-                            </div>
                         </div>
                         <button id="start-consult-btn" class="btn-primary" style="margin-top:20px;">🎤 Start Consultation</button>
                     </div>
@@ -376,6 +369,7 @@
         </section>
     </main>
 </div>
+<script src="/static/js/voice-capture.js"></script>
 <script>
 const API_BASE = '/api';
 let accessToken = localStorage.getItem('access_token');
@@ -384,8 +378,8 @@ if (!accessToken) window.location.href = '/index.html';
 let currentUser = null;
 let refreshToken = localStorage.getItem('refresh_token') || null;
 let isConsulting = false;
-let recognition = null;
-let accumulatedTranscript = '';
+let voiceRecorder = null;
+let usingManualFallback = false;
 let selectedPatientId = null;
 let currentConsultationId = null;
 let currentPatientName = '';
@@ -563,13 +557,16 @@ function setMicStatus(status, text) {
     micStatus.textContent = text;
 }
 
-function startSpeechRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+async function startVoiceCapture() {
+    usingManualFallback = false;
+    voiceRecorder = createVoiceRecorder({ apiBase: API_BASE, getAuthToken: () => accessToken });
+    if (!voiceRecorder.isSupported()) {
+        usingManualFallback = true;
         setMicStatus('idle', 'Not supported');
         analysisStatus.className = 'error';
-        analysisStatus.textContent = '⚠️ Browser does not support speech. Please type manually.';
+        analysisStatus.textContent = '⚠️ Browser does not support audio recording. Please type manually.';
         transcriptInput.disabled = false;
+        transcriptInput.value = '';
         transcriptInput.placeholder = 'Type transcript here...';
         isConsulting = true;
         startBtn.style.display = 'none';
@@ -577,77 +574,30 @@ function startSpeechRecognition() {
         transcriptInput.focus();
         return;
     }
-    navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(() => {
-            isConsulting = true;
-            startBtn.style.display = 'none';
-            stopBtn.style.display = 'inline-block';
-            transcriptInput.disabled = false;
-            transcriptInput.value = '';
-            accumulatedTranscript = '';
-            clearDraft();
-            setMicStatus('listening', 'Listening...');
-            analysisStatus.className = '';
-            analysisStatus.textContent = '🎤 Listening...';
-            recognition = new SpeechRecognition();
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.lang = 'en-IN';
-            recognition.onstart = () => setMicStatus('listening', 'Listening...');
-            recognition.onresult = (event) => {
-                let final = '', interim = '';
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) final += event.results[i][0].transcript + ' ';
-                    else interim += event.results[i][0].transcript;
-                }
-                if (final) { accumulatedTranscript += final; }
-                // Live Mode gates whether interim/final speech shows in the transcript box
-                // before Stop is clicked, or only gets committed once Stop runs -- see the
-                // stop-consult-btn handler below for the "commit on stop" path.
-                if (document.getElementById('live-mode').checked) {
-                    const fullText = (accumulatedTranscript + ' ' + interim).trim();
-                    transcriptInput.value = fullText;
-                    transcriptInput.scrollTop = transcriptInput.scrollHeight;
-                }
-            };
-            recognition.onerror = (event) => {
-                console.error('Speech error:', event.error);
-                if (event.error === 'not-allowed') {
-                    setMicStatus('idle', 'Mic blocked');
-                    analysisStatus.className = 'error';
-                    analysisStatus.textContent = '⚠️ Microphone access denied. Please allow or type manually.';
-                } else if (event.error === 'network') {
-                    setMicStatus('idle', 'Network error');
-                    analysisStatus.className = 'error';
-                    analysisStatus.textContent = '⚠️ Network error. Please try again.';
-                } else {
-                    setMicStatus('idle', 'Error');
-                    analysisStatus.className = 'error';
-                    analysisStatus.textContent = '⚠️ Speech error: ' + event.error;
-                }
-                if (isConsulting) setTimeout(() => { try { recognition.start(); } catch(e) {} }, 1000);
-            };
-            recognition.onend = () => {
-                if (isConsulting) {
-                    try { recognition.start(); } catch(e) { setTimeout(() => { if (isConsulting) try { recognition.start(); } catch(e) {} }, 1000); }
-                } else {
-                    setMicStatus('idle', 'Idle');
-                }
-            };
-            recognition.start();
-        })
-        .catch((err) => {
-            console.error('Microphone permission denied:', err);
-            setMicStatus('idle', 'Mic blocked');
-            analysisStatus.className = 'error';
-            analysisStatus.textContent = '⚠️ Microphone access denied. Please allow or type manually.';
-            isConsulting = true;
-            startBtn.style.display = 'none';
-            stopBtn.style.display = 'inline-block';
-            transcriptInput.disabled = false;
-            transcriptInput.placeholder = 'Type transcript here...';
-            transcriptInput.focus();
-        });
+    try {
+        await voiceRecorder.start();
+        isConsulting = true;
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        transcriptInput.disabled = false;
+        transcriptInput.value = '';
+        clearDraft();
+        setMicStatus('listening', 'Recording...');
+        analysisStatus.className = '';
+        analysisStatus.textContent = '🎤 Recording...';
+    } catch (err) {
+        console.error('Microphone permission denied:', err);
+        usingManualFallback = true;
+        setMicStatus('idle', 'Mic blocked');
+        analysisStatus.className = 'error';
+        analysisStatus.textContent = '⚠️ Microphone access denied. Please allow or type manually.';
+        isConsulting = true;
+        startBtn.style.display = 'none';
+        stopBtn.style.display = 'inline-block';
+        transcriptInput.disabled = false;
+        transcriptInput.placeholder = 'Type transcript here...';
+        transcriptInput.focus();
+    }
 }
 
 document.getElementById('start-consult-btn').addEventListener('click', () => {
@@ -658,21 +608,37 @@ document.getElementById('start-consult-btn').addEventListener('click', () => {
     }
     selectedPatientId = patientId;
     goToStep(1);
-    startSpeechRecognition();
+    startVoiceCapture();
 });
 
 document.getElementById('stop-consult-btn').addEventListener('click', async () => {
     isConsulting = false;
     stopBtn.style.display = 'none';
     startBtn.style.display = 'inline-block';
-    setMicStatus('idle', 'Stopped');
-    if (recognition) { try { recognition.stop(); } catch(e) {} recognition = null; }
-    if (!document.getElementById('live-mode').checked) {
-        // Live Mode was off -- the box was never updated during listening, so commit the
-        // full accumulated transcript now.
-        transcriptInput.value = accumulatedTranscript.trim();
+
+    let finalText = '';
+    if (usingManualFallback) {
+        setMicStatus('idle', 'Stopped');
+        finalText = transcriptInput.value.trim();
+    } else {
+        setMicStatus('idle', 'Transcribing...');
+        analysisStatus.className = '';
+        analysisStatus.textContent = '🔄 Transcribing...';
+        try {
+            finalText = (await voiceRecorder.stop()).trim();
+            transcriptInput.value = finalText;
+            setMicStatus('idle', 'Idle');
+        } catch (err) {
+            console.error('Transcription failed:', err);
+            setMicStatus('idle', 'Transcription failed');
+            analysisStatus.className = 'error';
+            analysisStatus.textContent = '⚠️ Transcription failed: ' + err.message + '. Please try again or type manually.';
+            transcriptInput.disabled = false;
+            transcriptInput.focus();
+            return;
+        }
     }
-    const finalText = transcriptInput.value.trim();
+
     if (finalText.length >= 10) {
         analysisStatus.className = '';
         analysisStatus.textContent = '🔄 Processing consultation...';

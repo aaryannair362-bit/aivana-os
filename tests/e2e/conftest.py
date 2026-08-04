@@ -10,17 +10,18 @@ second independently-configured copy within one pytest process, and there's no n
 top-level `_clean_database` autouse fixture already resets tables before every test, e2e
 included.
 
-The actual "simulate voice input" mechanics (mock SpeechRecognition, token minting, live
-server bootstrap) live in tests/_voice_helpers.py, shared with the standalone scale-test
-runner (tests/scale/runner.py) so there's exactly one implementation of each -- re-exported
-here for the existing test files that import them from this module.
+The actual "simulate voice input" mechanics (mock MediaRecorder, canned-transcript queuing,
+token minting, live server bootstrap) live in tests/_voice_helpers.py, shared with the
+standalone scale-test runner (tests/scale/runner.py) so there's exactly one implementation of
+each -- re-exported here for the existing test files that import them from this module.
 """
 import pytest
 
 from tests._voice_helpers import (  # noqa: F401  (re-exported for existing e2e test imports)
-    MOCK_SPEECH_RECOGNITION_INIT_SCRIPT,
-    fire_speech_result,
+    MOCK_MEDIA_RECORDER_INIT_SCRIPT,
     mint_tokens,
+    mock_transcription_network_failure,
+    queue_transcription_result,
     set_tokens_in_browser,
     start_live_server,
 )
@@ -44,10 +45,10 @@ def browser_context_args(browser_context_args):
 
 @pytest.fixture
 def js_page(page):
-    """A Playwright `page` with SpeechRecognition/getUserMedia mocked before any script runs,
+    """A Playwright `page` with MediaRecorder/getUserMedia mocked before any script runs,
     and JS errors captured so tests can assert the app never throws (that's exactly the class
     of bug this suite exists to catch)."""
-    page.add_init_script(MOCK_SPEECH_RECOGNITION_INIT_SCRIPT)
+    page.add_init_script(MOCK_MEDIA_RECORDER_INIT_SCRIPT)
     errors = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     page.js_errors = errors

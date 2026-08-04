@@ -62,16 +62,19 @@ def db_session():
 @pytest.fixture(autouse=True)
 def _no_live_groq_calls(monkeypatch):
     """
-    Default safety net: any test that doesn't explicitly stub scribe._call_groq_api gets a
-    RuntimeError instead of silently making a real network call to Groq with test data.
-    Individual tests override via monkeypatch.setattr(app_main.scribe, "_call_groq_api", ...).
+    Default safety net: any test that doesn't explicitly stub scribe._call_groq_api or
+    scribe.transcribe_audio gets a RuntimeError instead of silently making a real (billed,
+    nondeterministic) network call to Groq with test data. Individual tests override via
+    monkeypatch.setattr(app_main.scribe, "_call_groq_api"/"transcribe_audio", ...).
     """
     def _blocked(*args, **kwargs):
         raise RuntimeError(
-            "Test attempted a live Groq API call without mocking scribe._call_groq_api. "
-            "Mock it explicitly, or use the llm_integration marker for intentional live calls."
+            "Test attempted a live Groq API call without mocking scribe._call_groq_api / "
+            "scribe.transcribe_audio. Mock it explicitly, or use the llm_integration marker "
+            "for intentional live calls."
         )
     monkeypatch.setattr(app_main.scribe, "_call_groq_api", _blocked)
+    monkeypatch.setattr(app_main.scribe, "transcribe_audio", _blocked)
 
 
 @pytest.fixture

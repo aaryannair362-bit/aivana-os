@@ -14,7 +14,7 @@ Real-browser regression tests for two frontend/ipd.html fixes (see CHANGELOG.md)
 """
 import pytest
 
-from tests.e2e.conftest import fire_speech_result, mint_tokens, set_tokens_in_browser
+from tests.e2e.conftest import mint_tokens, queue_transcription_result, set_tokens_in_browser
 
 pytestmark = pytest.mark.e2e
 
@@ -101,6 +101,7 @@ def test_save_after_process_persists_structured_vitals_not_null_columns(
         })
 
     monkeypatch.setattr(app_main.scribe, "_call_groq_api", _fake_call)
+    queue_transcription_result(monkeypatch, app_main, "BP 132 over 84, heart rate 91, patient feels dizzy")
 
     tokens = mint_tokens(head_nurse)
     set_tokens_in_browser(js_page, live_server_url, tokens["access_token"], tokens["refresh_token"])
@@ -111,8 +112,8 @@ def test_save_after_process_persists_structured_vitals_not_null_columns(
 
     js_page.click("#nursing-voice-btn")
     js_page.wait_for_timeout(100)
-    fire_speech_result(js_page, "BP 132 over 84, heart rate 91, patient feels dizzy")
-    js_page.wait_for_timeout(150)
+    js_page.click("#nursing-voice-btn", force=True)  # stop -> upload -> transcribe
+    js_page.wait_for_timeout(300)
 
     js_page.click("#nursing-process-btn")
     js_page.wait_for_timeout(400)

@@ -1,8 +1,8 @@
 """
 One deep, end-to-end patient journey exercising OPD and IPD voice-driven features together,
 driven through the real frontend/opd.html and frontend/ipd.html pages via a real headless
-browser with SpeechRecognition mocked (tests/_voice_helpers.py) -- never a raw transcript
-posted straight to the API.
+browser with MediaRecorder mocked and scribe.transcribe_audio stubbed with canned results
+(tests/_voice_helpers.py) -- never a raw transcript posted straight to the API.
 
 The OPD leg's spoken transcript and mocked extraction are built to reproduce, field for field,
 the outpatient prescription in the reference file supplied for this test
@@ -47,11 +47,10 @@ import pytest
 import requests
 
 from tests._voice_helpers import (
-    MOCK_SPEECH_RECOGNITION_INIT_SCRIPT,
-    fire_speech_result,
+    MOCK_MEDIA_RECORDER_INIT_SCRIPT,
     mint_tokens,
+    queue_transcription_result,
     set_tokens_in_browser,
-    speak_utterances,
 )
 
 pytestmark = pytest.mark.e2e
@@ -210,7 +209,7 @@ def _groq_dispatcher(prompt, system=None, temperature=0.3):
 
 def _new_actor_page(context):
     page = context.new_page()
-    page.add_init_script(MOCK_SPEECH_RECOGNITION_INIT_SCRIPT)
+    page.add_init_script(MOCK_MEDIA_RECORDER_INIT_SCRIPT)
     page.on("dialog", lambda d: d.accept())
     errors = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
@@ -260,10 +259,10 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
     doctor_page.goto(f"{live_server_url}/opd.html")
     doctor_page.wait_for_function("document.querySelector('#patient-select').options.length > 1", timeout=20000)
     doctor_page.select_option("#patient-select", str(patient_id))
+    full_transcript = " ".join(OPD_TRANSCRIPT_UTTERANCES)
+    queue_transcription_result(monkeypatch, app_main, full_transcript)
     doctor_page.click("#start-consult-btn")
     doctor_page.wait_for_timeout(150)
-    speak_utterances(doctor_page, OPD_TRANSCRIPT_UTTERANCES, delay_ms=60)
-    full_transcript = " ".join(OPD_TRANSCRIPT_UTTERANCES)
     doctor_page.click("#stop-consult-btn")
     doctor_page.wait_for_function(
         "document.querySelector('#analysis-status').textContent.includes('ready') || "
@@ -382,10 +381,14 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
     nurse_page.evaluate(f"openNursingConsult({patient_id})")
     nurse_page.wait_for_selector("#nursing-consult-modal[style*='flex']", timeout=10000)
 
+    queue_transcription_result(monkeypatch, app_main, NURSE_CONSULT_TRANSCRIPT)
     nurse_page.click("#nursing-voice-btn")
     nurse_page.wait_for_timeout(100)
-    fire_speech_result(nurse_page, NURSE_CONSULT_TRANSCRIPT)
-    nurse_page.wait_for_timeout(100)
+    nurse_page.click("#nursing-voice-btn", force=True)  # stop -> upload -> transcribe
+    nurse_page.wait_for_function(
+        "document.querySelector('#nursing-voice-status').textContent.includes('Transcribed')",
+        timeout=20000,
+    )
 
     nurse_page.click("#nursing-process-btn")
     nurse_page.wait_for_function(
@@ -440,10 +443,10 @@ def test_full_patient_journey_opd_walkin_to_ipd_admission_and_discharge(
     doctor_page.wait_for_selector("#ward-round-modal[style*='flex']", timeout=10000)
     assert "Day 2" in (doctor_page.eval_on_selector("#round-day", "el => el.textContent") or "")
 
+    round2_transcript = " ".join(ROUND2_TRANSCRIPT_UTTERANCES)
+    queue_transcription_result(monkeypatch, app_main, round2_transcript)
     doctor_page.click("#round-start-btn")
     doctor_page.wait_for_timeout(150)
-    speak_utterances(doctor_page, ROUND2_TRANSCRIPT_UTTERANCES, delay_ms=60)
-    round2_transcript = " ".join(ROUND2_TRANSCRIPT_UTTERANCES)
     doctor_page.click("#round-stop-btn")
     doctor_page.wait_for_function(
         "document.querySelector('#round-finalize-btn').style.display === 'inline-block' || "

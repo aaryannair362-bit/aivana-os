@@ -298,6 +298,7 @@
     </div>
 </div>
 
+<script src="/static/js/voice-capture.js"></script>
 <script src="/static/js/ipd-shared.js"></script>
 <script>
 if (!accessToken) window.location.href = '/index.html';
@@ -687,6 +688,13 @@ function openNursingConsult(patientId) {
         document.getElementById('nursing-consult-bed').textContent = p.bed;
         document.getElementById('nursing-consult-patient').textContent = `Nursing Notes – ${p.name}`;
     }).catch(err => alert('Could not load patient: ' + err.message));
+    if (typeof nursingVoiceIsRecording !== 'undefined' && nursingVoiceIsRecording) {
+        // Leftover recording from a previous open of this modal (e.g. it was closed
+        // mid-recording) -- stop it (discarding the result) so a fresh open always starts clean.
+        nursingVoiceIsRecording = false;
+        nursingVoiceRecorder.stop().catch(() => {});
+        document.getElementById('nursing-voice-btn').classList.remove('listening');
+    }
     document.getElementById('nursing-voice-text').value = '';
     document.getElementById('nursing-note-text').value = '';
     document.getElementById('nursing-extracted').style.display = 'none';
@@ -698,44 +706,45 @@ function openNursingConsult(patientId) {
     document.getElementById('nursing-consult-modal').style.display = 'flex';
 }
 
-let nursingVoiceRecognition = null;
-document.getElementById('nursing-voice-btn').addEventListener('click', () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) { alert('Speech not supported'); return; }
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (nursingVoiceRecognition) {
-        nursingVoiceRecognition.stop();
-        nursingVoiceRecognition = null;
-        document.getElementById('nursing-voice-btn').classList.remove('listening');
-        document.getElementById('nursing-voice-status').textContent = 'Stopped';
+// Toggle button: click starts a MediaRecorder recording, click again stops it, uploads the
+// clip to POST /api/transcribe-audio (Groq Whisper -- see frontend/js/voice-capture.js), and
+// appends the returned transcript to nursing-voice-text with a newline, same as the old
+// per-click SpeechRecognition accumulation behavior.
+const nursingVoiceRecorder = createVoiceRecorder({ apiBase: API_BASE, getAuthToken: () => accessToken });
+let nursingVoiceIsRecording = false;
+document.getElementById('nursing-voice-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('nursing-voice-btn');
+    const status = document.getElementById('nursing-voice-status');
+    if (!nursingVoiceRecorder.isSupported()) {
+        alert('Audio recording is not supported in this browser. Please type manually.');
         return;
     }
-    nursingVoiceRecognition = new SpeechRecognition();
-    nursingVoiceRecognition.lang = 'en-IN';
-    nursingVoiceRecognition.continuous = false;
-    nursingVoiceRecognition.interimResults = false;
-    nursingVoiceRecognition.onstart = () => {
-        document.getElementById('nursing-voice-btn').classList.add('listening');
-        document.getElementById('nursing-voice-status').textContent = 'Listening...';
-    };
-    nursingVoiceRecognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        const textarea = document.getElementById('nursing-voice-text');
-        textarea.value = (textarea.value ? textarea.value + '\n' : '') + transcript;
-        document.getElementById('nursing-voice-status').textContent = 'Transcribed. Click Process.';
-    };
-    nursingVoiceRecognition.onerror = (e) => {
-        document.getElementById('nursing-voice-status').textContent = 'Error: ' + e.error;
-        document.getElementById('nursing-voice-btn').classList.remove('listening');
-        nursingVoiceRecognition = null;
-    };
-    nursingVoiceRecognition.onend = () => {
-        document.getElementById('nursing-voice-btn').classList.remove('listening');
-        if (document.getElementById('nursing-voice-status').textContent === 'Listening...') {
-            document.getElementById('nursing-voice-status').textContent = 'Click mic to speak';
+    if (nursingVoiceIsRecording) {
+        nursingVoiceIsRecording = false;
+        btn.classList.remove('listening');
+        status.textContent = 'Transcribing...';
+        try {
+            const transcript = (await nursingVoiceRecorder.stop()).trim();
+            if (transcript) {
+                const textarea = document.getElementById('nursing-voice-text');
+                textarea.value = (textarea.value ? textarea.value + '\n' : '') + transcript;
+                status.textContent = 'Transcribed. Click Process.';
+            } else {
+                status.textContent = 'Click mic to speak';
+            }
+        } catch (err) {
+            status.textContent = 'Transcription failed: ' + err.message;
         }
-        nursingVoiceRecognition = null;
-    };
-    nursingVoiceRecognition.start();
+        return;
+    }
+    try {
+        await nursingVoiceRecorder.start();
+        nursingVoiceIsRecording = true;
+        btn.classList.add('listening');
+        status.textContent = 'Recording...';
+    } catch (err) {
+        status.textContent = 'Microphone access denied.';
+    }
 });
 
 document.getElementById('nursing-process-btn').addEventListener('click', async () => {

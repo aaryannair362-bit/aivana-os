@@ -1,9 +1,19 @@
 """
 Shared "simulate voice input" mechanics, used by BOTH the pytest e2e suite (tests/e2e/) and
-the standalone scale-test runner (tests/scale/runner.py). There is exactly one implementation
-of "how do we make a browser believe it heard speech" -- every test and every scale scenario
-goes through a mocked SpeechRecognition event fired at a real browser page, never a raw
-transcript POSTed straight to the API bypassing the voice UI.
+the standalone scale-test runner (tests/scale/runner.py).
+
+As of the MediaRecorder/Groq-Whisper migration (replacing the browser's SpeechRecognition,
+which mis-transcribed Hindi/Hinglish speech into English-phonetic nonsense), the mock point
+moved from the browser's speech-recognition object to the Python method boundary: the browser
+never talks to Groq directly, it talks to THIS APP'S OWN `POST /api/transcribe-audio`
+endpoint, which calls `scribe.transcribe_audio`. So the convention here matches every other
+Groq mock in this suite (`monkeypatch.setattr(app_main.scribe, "_call_groq_api", ...)`,
+`tests/conftest.py`'s `mock_groq_json`): stub `scribe.transcribe_audio` in-process and let the
+real request flow all the way through -- real browser `fetch`+`FormData`, a real network hop
+to the real live server, real FastAPI multipart parsing, real auth -- with only the actual
+outbound Groq HTTP call stubbed. `MOCK_MEDIA_RECORDER_INIT_SCRIPT` only needs to produce SOME
+non-empty audio blob for the upload to carry; its content is never inspected by anything,
+since Groq is never actually called in tests.
 """
 import socket
 import threading
@@ -11,24 +21,32 @@ import time
 
 import requests
 
-MOCK_SPEECH_RECOGNITION_INIT_SCRIPT = """
-window.__mockInstances = [];
-class MockSpeechRecognition {
-    constructor() {
-        this.continuous = false;
-        this.interimResults = false;
-        this.lang = '';
+MOCK_MEDIA_RECORDER_INIT_SCRIPT = """
+window.__mockRecorderInstances = [];
+class MockMediaRecorder {
+    constructor(stream, options) {
+        this.stream = stream;
+        this.mimeType = (options && options.mimeType) || 'audio/webm';
+        this.ondataavailable = null;
         this.onstart = null;
-        this.onresult = null;
+        this.onstop = null;
         this.onerror = null;
-        this.onend = null;
-        window.__mockInstances.push(this);
+        window.__mockRecorderInstances.push(this);
     }
-    start() { if (this.onstart) this.onstart(); }
-    stop() { if (this.onend) setTimeout(() => this.onend && this.onend(), 5); }
+    start() {
+        setTimeout(() => { if (this.onstart) this.onstart(); }, 0);
+    }
+    stop() {
+        setTimeout(() => {
+            if (this.ondataavailable) {
+                this.ondataavailable({ data: new Blob(['mock-audio'], { type: this.mimeType }) });
+            }
+            if (this.onstop) this.onstop();
+        }, 0);
+    }
 }
-window.SpeechRecognition = MockSpeechRecognition;
-window.webkitSpeechRecognition = MockSpeechRecognition;
+MockMediaRecorder.isTypeSupported = () => true;
+window.MediaRecorder = MockMediaRecorder;
 if (!navigator.mediaDevices) { navigator.mediaDevices = {}; }
 navigator.mediaDevices.getUserMedia = () => Promise.resolve({ getTracks: () => [] });
 """
@@ -98,27 +116,41 @@ def set_tokens_in_browser(page, base_url, access_token, refresh_token):
     )
 
 
-def fire_speech_result(page, text: str, is_final: bool = True):
-    """Simulate the browser delivering one SpeechRecognition result to the most recently
-    created mock recognition instance, matching the shape opd.html/ipd.html's onresult
-    handlers expect."""
-    page.evaluate(
-        """([text, isFinal]) => {
-            const rec = window.__mockInstances[window.__mockInstances.length - 1];
-            const results = [];
-            results[0] = { 0: { transcript: text }, isFinal };
-            results.length = 1;
-            results.resultIndex = 0;
-            rec.onresult({ resultIndex: 0, results });
-        }""",
-        [text, is_final],
-    )
+def queue_transcription_result(monkeypatch, app_main, *texts):
+    """
+    Monkeypatches app_main.scribe.transcribe_audio to pop one canned transcript string off
+    `texts` (in call order) each time a page's mic Start/Stop cycle uploads a recording,
+    raising AssertionError if called more times than queued -- this still catches a
+    duplicate-upload regression the same way the old fire_speech_result-based duplication
+    test did.
+
+    Replaces both the old fire_speech_result (a single canned value) and speak_utterances
+    (several fired incrementally): there's no more incremental delivery in the
+    MediaRecorder/Whisper model, only one full transcript returned per Stop click, so a
+    "multi-utterance conversation" is just one pre-joined string passed as a single queued
+    result, e.g. queue_transcription_result(monkeypatch, app_main, " ".join(utterances)).
+    Call this BEFORE the page's Start/Stop click pair that should receive it.
+    """
+    remaining = list(texts)
+
+    def _fake(audio_bytes, content_type, filename):
+        if not remaining:
+            raise AssertionError(
+                "scribe.transcribe_audio was called more times than "
+                "queue_transcription_result was given canned results for"
+            )
+        return remaining.pop(0)
+
+    monkeypatch.setattr(app_main.scribe, "transcribe_audio", _fake)
 
 
-def speak_utterances(page, utterances, delay_ms=80):
-    """Fire a sequence of speech-recognition results with a small delay between each,
-    mirroring how a real multi-sentence conversation arrives incrementally rather than as
-    one giant final blob."""
-    for text in utterances:
-        fire_speech_result(page, text)
-        page.wait_for_timeout(delay_ms)
+def mock_transcription_network_failure(page):
+    """
+    Secondary helper for the small number of tests that specifically want a NETWORK-level
+    failure of POST /api/transcribe-audio (the request never reaches the real FastAPI
+    endpoint at all) as distinct from a Groq-level failure (queue_transcription_result's
+    sibling: monkeypatch scribe.transcribe_audio to raise, which DOES reach the real
+    endpoint and exercises its error handling). Not the default mechanism -- see the module
+    docstring for why in-process mocking is preferred everywhere else.
+    """
+    page.route("**/api/transcribe-audio", lambda route: route.abort())

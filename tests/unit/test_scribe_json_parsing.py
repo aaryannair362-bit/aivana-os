@@ -224,6 +224,10 @@ def test_call_groq_api_drops_reasoning_format_when_model_rejects_it(monkeypatch,
         status_code = 400
         text = '{"error":{"message":"`reasoning_format` is not supported with this model","param":"reasoning_format"}}'
 
+        def raise_for_status(self):
+            import requests
+            raise requests.exceptions.HTTPError(self.text, response=self)
+
     class _Success:
         status_code = 200
 

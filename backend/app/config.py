@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     # GROQ_API_KEY directly so the original key stays available/documented as a fallback.
     GROQ_API_KEY_Prod: str = os.getenv("GROQ_API_KEY_Prod", "")
     GROQ_MODEL: str = "qwen/qwen3.6-27b"
+    # Whisper model used for POST /api/transcribe-audio (see scribe.py's transcribe_audio) --
+    # a separate setting from GROQ_MODEL since it's a different model for a different Groq
+    # endpoint (audio translations, not chat completions).
+    GROQ_AUDIO_MODEL: str = os.getenv("GROQ_AUDIO_MODEL", "whisper-large-v3")
     # Comma-separated list of origins allowed to call the API. The frontend is same-origin
     # (served by this same FastAPI process, API_BASE = '/api'), so this only matters for local
     # dev on a different port/live-server and any future separately-hosted frontend.

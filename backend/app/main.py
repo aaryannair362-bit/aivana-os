@@ -7,7 +7,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -36,6 +36,10 @@ from .tasks_engine import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Groq's free-tier audio-upload limit as of this writing -- re-verify against current Groq
+# docs if this ever needs bumping, don't just raise it blindly.
+MAX_AUDIO_UPLOAD_BYTES = 25 * 1024 * 1024
 
 engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -486,6 +490,43 @@ async def scribe_transcript(request: Request, current_user: dict = Depends(get_c
         # PHI-derived content, and this response goes straight to the caller, not just a log.
         logger.error("Scribe error: %s", e)
         raise HTTPException(500, "Internal server error")
+
+@app.post("/api/transcribe-audio")
+async def transcribe_audio_endpoint(
+    request: Request, audio: UploadFile = File(...), current_user: dict = Depends(get_current_user)
+):
+    """
+    Server-side speech-to-text for all 4 voice-input flows (OPD consult, IPD nursing note,
+    IPD ward round, HeadNurse nursing note) -- replaces the browser's built-in
+    SpeechRecognition, which mis-transcribes Hindi/Hinglish speech into English-phonetic
+    nonsense (verified live: an actual drug name came out as unrelated English words).
+    Stateless -- no DB/patient/org involvement, same shape as /api/clinical-helper -- so no
+    role gate beyond authentication, matching /api/scribe.
+    """
+    # Fast pre-flight rejection on the declared size before buffering anything, plus a
+    # post-read recheck below as defense-in-depth (a missing/spoofed Content-Length under
+    # chunked transfer shouldn't be trusted alone).
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_AUDIO_UPLOAD_BYTES:
+        raise HTTPException(413, "Audio file too large")
+    try:
+        data = await audio.read()
+        if not data:
+            raise HTTPException(400, "Empty audio upload")
+        if len(data) > MAX_AUDIO_UPLOAD_BYTES:
+            raise HTTPException(413, "Audio file too large")
+        text = await run_in_threadpool(
+            scribe.transcribe_audio, data, audio.content_type or "audio/webm", audio.filename or "recording.webm"
+        )
+        return {"transcript": text}
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Same rule as /api/scribe: never echo str(e) back to the client -- a Groq error
+        # message can echo request content back, and this response goes straight to the
+        # caller, not just a log.
+        logger.error("Audio transcription error: %s", e)
+        raise HTTPException(502, "Transcription failed")
 
 @app.post("/api/test-scribe")
 async def test_scribe(request: Request):

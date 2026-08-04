@@ -4,8 +4,20 @@ Standalone (non-pytest) resumable runner for the large-scale voice-input test pa
 Not pytest-collected on purpose: thousands of individually-parametrized pytest tests would
 add unreasonable collection/reporting overhead at this scale. This reuses the exact same
 "simulate voice input" mechanics tests/e2e/ uses (tests/_voice_helpers.py) -- a real headless
-browser with a mocked SpeechRecognition firing recognized-speech events -- against the REAL
-live Groq API (unlike pytest's tests/conftest.py, which deliberately blocks live calls).
+browser with a mocked MediaRecorder -- against the REAL live Groq API for the
+extraction/interaction/discharge chat-completion calls (unlike pytest's tests/conftest.py,
+which deliberately blocks live calls).
+
+Whisper transcription is the one exception, deliberately never live here: app.scribe.
+transcribe_audio is set to return each scenario's own utterance text directly (see
+_drive_opd_consult/_drive_ipd_round) rather than routed through a real Groq Whisper call.
+This scenario library is built from synthesized utterance TEXT, not real recorded audio, so
+there is nothing for a real Whisper call to transcribe -- and even if there were, pacing a 4th
+real per-visit Groq call against a separate, model-specific rate-limit budget (see
+RequestBucket) would need its own probe/budget entry for no real signal, since this harness
+was never going to be able to validate live ASR accuracy against synthesized text anyway. This
+means a scale run validates pipeline integrity and real extraction/interaction/discharge
+quality end-to-end, not Whisper transcription accuracy on real Hindi/Hinglish speech.
 
 Safety: always runs against a throwaway SQLite database, never the production Postgres URL
 configured in backend/.env -- asserted defensively before and after import.
@@ -194,10 +206,10 @@ def _auth_headers(user):
 
 
 def _new_page(context):
-    from tests._voice_helpers import MOCK_SPEECH_RECOGNITION_INIT_SCRIPT
+    from tests._voice_helpers import MOCK_MEDIA_RECORDER_INIT_SCRIPT
 
     page = context.new_page()
-    page.add_init_script(MOCK_SPEECH_RECOGNITION_INIT_SCRIPT)
+    page.add_init_script(MOCK_MEDIA_RECORDER_INIT_SCRIPT)
     page.on("dialog", lambda d: d.accept())
     js_errors = []
     page.on("pageerror", lambda exc: js_errors.append(str(exc)))
@@ -218,8 +230,8 @@ def _backdate_admission(app_main, patient_id, day):
         db.close()
 
 
-def _drive_opd_consult(context, base_url, doctor, patient_id, utterances):
-    from tests._voice_helpers import mint_tokens, set_tokens_in_browser, speak_utterances
+def _drive_opd_consult(context, base_url, app_main, doctor, patient_id, utterances):
+    from tests._voice_helpers import mint_tokens, set_tokens_in_browser
 
     out = {"js_errors": [], "tasks_created": 0, "interaction_warnings": False, "error": None, "prescription": None}
     page = _new_page(context)
@@ -229,13 +241,19 @@ def _drive_opd_consult(context, base_url, doctor, patient_id, utterances):
         page.goto(f"{base_url}/opd.html")
         page.wait_for_function("document.querySelector('#patient-select').options.length > 1", timeout=20000)
         page.select_option("#patient-select", str(patient_id))
+        full_text = " ".join(u for u in utterances if u).strip()
+        # Not routed through real Groq Whisper -- see module docstring. Reassigned fresh per
+        # visit (safe: run_scenario drives visits strictly sequentially, never concurrently).
+        app_main.scribe.transcribe_audio = lambda audio_bytes, content_type, filename, _t=full_text: _t
         page.click("#start-consult-btn")
         page.wait_for_timeout(120)
-        full_text = " ".join(u for u in utterances if u).strip()
-        speak_utterances(page, utterances, delay_ms=55)
         page.click("#stop-consult-btn")
         if len(full_text) < 10:
-            page.wait_for_timeout(400)
+            # One (mocked, cost-free) /api/transcribe-audio round trip now happens even for a
+            # short transcript before the frontend's own length guard can react to it (the
+            # guard runs on the RETURNED transcript, not before the recording upload) -- allow
+            # a bit more time than the pre-MediaRecorder version needed for that extra hop.
+            page.wait_for_timeout(600)
             status = page.eval_on_selector("#analysis-status", "el => el.textContent") or ""
             if "too short" not in status.lower():
                 out["error"] = f"expected short-transcript guard, got: {status!r}"
@@ -287,8 +305,8 @@ def _drive_opd_consult(context, base_url, doctor, patient_id, utterances):
     return out
 
 
-def _drive_ipd_round(context, base_url, doctor, patient_id, utterances):
-    from tests._voice_helpers import mint_tokens, set_tokens_in_browser, speak_utterances
+def _drive_ipd_round(context, base_url, app_main, doctor, patient_id, utterances):
+    from tests._voice_helpers import mint_tokens, set_tokens_in_browser
 
     out = {"js_errors": [], "tasks_created": 0, "interaction_warnings": False, "error": None, "prescription": None}
     page = _new_page(context)
@@ -299,13 +317,17 @@ def _drive_ipd_round(context, base_url, doctor, patient_id, utterances):
         page.wait_for_function("document.querySelectorAll('.patient-card').length > 0", timeout=20000)
         page.evaluate("(id) => openWardRound(id)", patient_id)
         page.wait_for_selector("#ward-round-modal[style*='flex']", timeout=15000)
+        full_text = " ".join(u for u in utterances if u).strip()
+        # Not routed through real Groq Whisper -- see module docstring. Reassigned fresh per
+        # visit (safe: run_scenario drives visits strictly sequentially, never concurrently).
+        app_main.scribe.transcribe_audio = lambda audio_bytes, content_type, filename, _t=full_text: _t
         page.click("#round-start-btn")
         page.wait_for_timeout(120)
-        full_text = " ".join(u for u in utterances if u).strip()
-        speak_utterances(page, utterances, delay_ms=55)
         page.click("#round-stop-btn")
         if len(full_text) < 10:
-            page.wait_for_timeout(400)
+            # See the analogous comment in _drive_opd_consult -- one mocked /transcribe-audio
+            # round trip now happens before the guard can react.
+            page.wait_for_timeout(600)
             status = page.eval_on_selector("#round-status", "el => el.textContent") or ""
             if "too short" not in status.lower():
                 out["error"] = f"expected short-transcript guard, got: {status!r}"
@@ -481,9 +503,9 @@ def run_scenario(scenario, ctx):
 
             if scenario.admission_days > 0:
                 _backdate_admission(app_main, patient_id, day)
-                outcome = _drive_ipd_round(context, base_url, users["doctor"], patient_id, utterances)
+                outcome = _drive_ipd_round(context, base_url, app_main, users["doctor"], patient_id, utterances)
             else:
-                outcome = _drive_opd_consult(context, base_url, users["doctor"], patient_id, utterances)
+                outcome = _drive_opd_consult(context, base_url, app_main, users["doctor"], patient_id, utterances)
 
             result["js_errors"].extend(outcome.get("js_errors", []))
             total_tasks += outcome.get("tasks_created", 0)
