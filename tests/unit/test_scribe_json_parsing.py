@@ -150,10 +150,46 @@ def test_scribe_transcript_coerces_non_string_scalar_fields_to_string(engine):
 
 
 def test_scribe_transcript_preserves_provided_medications_list(engine):
+    """Confirms the medications array structurally survives JSON parsing + default-backfill
+    intact (right key, right length, other fields untouched) -- drugName itself is expected to
+    go through drug_matcher's real correction (including its bare-name path, see
+    tests/unit/test_drug_matcher.py for that behavior in detail), not verbatim passthrough."""
     meds = [{"drugName": "Paracetamol", "dose": "650mg", "frequency": "SOS", "route": "Oral", "duration": "5 days"}]
     _stub_call(engine, raw_return=json.dumps({"medications": meds}))
     result = engine.scribe_transcript("some transcript text long enough")
-    assert result["medications"] == meds
+    assert len(result["medications"]) == 1
+    corrected = result["medications"][0]
+    assert corrected["dose"] == "650mg"
+    assert corrected["frequency"] == "SOS"
+    assert corrected["route"] == "Oral"
+    assert corrected["duration"] == "5 days"
+    assert "paracetamol" in corrected["drugName"].lower()
+
+
+def test_system_prompt_forbids_medications_in_hpi_or_chief_complaint(engine):
+    """Regression: verified live that the model folded medication names/doses into the hpi
+    field (doctor says "for the vomiting I gave him Ofloxil" -> hpi ended up containing
+    "...vomiting, paracetamol 250 mg, Ofloxil" verbatim, duplicating what's already in the
+    medications array) because the old prompt only said clinical findings MUST be included in
+    hpi, with nothing excluding medications -- the model treated a just-extracted drug name as
+    a "finding". Pins down that both the system prompt and the per-call field descriptions
+    explicitly forbid this now, rather than re-deriving the exact wording."""
+    assert "medication" in engine.system_prompt.lower()
+    assert "never" in engine.system_prompt.lower()
+
+
+def test_scribe_transcript_prompt_field_descriptions_exclude_medications(engine):
+    captured = {}
+
+    def _fake(prompt, system=None, temperature=0.3):
+        captured["prompt"] = prompt
+        return json.dumps({})
+
+    engine._call_groq_api = _fake
+    engine.scribe_transcript("some transcript text long enough")
+    prompt_lower = captured["prompt"].lower()
+    assert "never" in prompt_lower
+    assert "medication" in prompt_lower
 
 
 def test_translate_prescription_english_is_passthrough_no_llm_call(engine):

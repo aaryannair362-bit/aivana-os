@@ -11,13 +11,27 @@ drug name they already trust. This module looks up the closest real product name
 in before the prescription is ever shown to the doctor, the same way a pharmacy system's
 autocomplete would.
 
-Only ever acts on a drugName that states an explicit form/route ("Tablet Zanocin", "Tab
-Aceclofenac" -- the convention this app's own OPD pipeline actually uses; see
-tests/from_data/fixtures.py), and never crosses to a different form than the one stated. A bare
-generic/brand name with no form ("Diclofenac", "Aspirin") is left untouched, even when it's
-misspelled. See _find_correction's docstring for the two real bug classes (dangerous form/route
-swaps, and look-alike-sound-alike brand collisions on bare names) this conservatism exists to
-avoid -- both found live, against real pre-existing test fixtures, during development.
+When a drugName states an explicit form/route ("Tablet Zanocin", "Tab Aceclofenac" -- the
+convention this app's own OPD pipeline actually uses; see tests/from_data/fixtures.py),
+correction never crosses to a different form than the one stated, and requires a high
+same-form match score (see _find_correction's docstring for the two real bug classes --
+dangerous form/route swaps, and look-alike-sound-alike (LASA) brand collisions -- this
+conservatism exists to avoid, both found live during development).
+
+Bare names (no stated form, e.g. "Diclofenac", "Ofloxil") go through a SEPARATE, deliberately
+unguarded path (_find_bare_name_correction): always take the single highest-scoring dataset
+match above a low noise floor, no confidence threshold. This is a conscious product decision,
+not an oversight -- accepted after being shown concretely that it reopens the exact LASA
+collision risk above on common drugs (verified live: a bare, correctly-spelled "Diclofenac"
+scores 94.7 against the real, different, WRONG "Dicofenac Injection" vs only 74.1 against the
+correct "Diclofenac Sodium Injection", because the extra qualifier word "Sodium" penalizes
+fuzz.ratio's length-sensitive score -- i.e. this can silently misfire on a perfectly-spoken,
+perfectly-transcribed drug name, not just an ASR mishearing). Chosen anyway because catching
+real typos on unguarded bare names (e.g. Whisper mis-transcribing "Ofloxin" as "Ofloxil", which
+only scores 85.7 -- below any threshold that would also exclude the LASA cases above) was
+judged worth more than the collision risk for this app's use case. If that tradeoff ever needs
+revisiting, the fix is a curated LASA confusion list (out of scope here), not a threshold
+tweak -- see _find_correction's docstring for why no threshold can separate the two classes.
 
 Matching strategy: dataset names embed strength/form in the string itself
 ("Zanocin 200 Tablet", "Calpol 500mg Tablet"), which would dominate a naive full-string fuzzy
@@ -265,6 +279,61 @@ def _find_correction(drug_name: str, dose=None, threshold: float = DEFAULT_MATCH
     return _disambiguate_tied_candidates(tied, full_names, drug_name, dose)
 
 
+# Floor for the bare-name path (_find_bare_name_correction) -- NOT a confidence threshold like
+# DEFAULT_MATCH_THRESHOLD (that distinction is the whole point: see this module's docstring).
+# This exists only to reject the CLEARLY-unrelated end of the score range -- it does NOT (and
+# per the empirical evidence below, structurally cannot) separate a genuine typo of a dataset
+# drug from a different, unrelated drug that's simply missing from the dataset, or from a
+# different real LASA-colliding drug.
+#
+# Calibrated empirically, not guessed: "Ofloxil" (the reported bug, should correct) scores 85.7
+# against BOTH real dataset entries "Ofloxin"/"Floxsil" it's plausibly a typo of. "Electral"
+# (missing from the dataset entirely -- see test_a_real_drug_missing_from_the_dataset_is_left_
+# unchanged_rather_than_force_matched, the FORM-gated path's own calibration example) scores an
+# EXACT TIE at 85.7 against the unrelated "Eletra" -- i.e. there is NO floor value that admits
+# the wanted case and rejects this one; they are mathematically identical here. What a floor
+# CAN still usefully reject is the clearly-lower-confidence band below that: "Warfarin"
+# (missing from the dataset, a narrow-therapeutic-index anticoagulant) scored 71.4 against the
+# entirely unrelated "Aarcin"; "Rivaroxaban" (also missing) scored 77.8 against "Rivaban" --
+# both real, live false-positive matches caught while calibrating this. 80.0 sits above both of
+# those and comfortably below 85.7, so it removes that lower band of clearly-worse false
+# positives without narrowing (or widening) the already-accepted risk at 85.7+ at all.
+BARE_NAME_NOISE_FLOOR = 80.0
+
+
+def _find_bare_name_correction(drug_name: str, dose=None, threshold: float = BARE_NAME_NOISE_FLOOR) -> Optional[str]:
+    """
+    Unguarded sibling of _find_correction, for drugNames with no stated pharmaceutical
+    form/route. Always returns the single highest-scoring dataset match (by the same
+    stripped-base fuzz.ratio scoring _find_correction uses) above `threshold`, searched across
+    candidates of ANY form (there's no stated form to filter by) -- never gated on a minimum
+    "confidence" score the way the form-gated path is, because no such threshold exists that
+    would catch real typos (e.g. Ofloxil->Ofloxin, 85.7) without also catching the documented
+    LASA collisions (94.7-95.7) this app's form-gate was originally built to exclude. See the
+    module docstring for why this tradeoff was accepted anyway. Ties broken the same way as
+    _find_correction (prefer whichever candidate's dose matches, else dataset order).
+    """
+    if not drug_name or not isinstance(drug_name, str):
+        return None
+    query_base = _strip_to_base(drug_name)
+    if len(query_base) < MIN_BASE_LENGTH:
+        return None
+
+    full_names, bases, forms = _load()
+    if not bases:
+        return None
+
+    raw = process.extract(query_base, bases, scorer=fuzz.ratio, score_cutoff=threshold, limit=50)
+    matches = [(text, score, index) for text, score, index in raw]
+    if not matches:
+        return None
+    top_score = matches[0][1]
+    tied = [m for m in matches if m[1] >= top_score - _TIE_MARGIN]
+    if len(tied) == 1:
+        return full_names[tied[0][2]]
+    return _disambiguate_tied_candidates(tied, full_names, drug_name, dose)
+
+
 def closest_medicine_name(query: str, threshold: float = DEFAULT_MATCH_THRESHOLD) -> Optional[str]:
     """
     Returns the closest canonical medicine name to `query` from the dataset (with its real
@@ -279,13 +348,18 @@ def correct_medication_names(medications: list, threshold: float = DEFAULT_MATCH
     """
     Applied to a prescription's `medications` list (each a dict with a "drugName" key) right
     after AI extraction, before the draft ever reaches the doctor: replaces each drugName with
-    its closest canonical match from the medicines dataset, if one scores high enough --
-    never crossing a stated pharmaceutical form/route (see _find_correction's hard constraint),
-    and disambiguating same-brand/same-form ties using the medication's own dose (see
-    _disambiguate_tied_candidates) rather than picking an arbitrary variant. Leaves
-    dose/frequency/route/duration untouched, and leaves drugName alone (no key added) whenever
-    no confident match is found -- including when the dataset itself is unavailable, so this
-    can never turn a working prescription flow into a broken one.
+    its closest canonical match from the medicines dataset. Two paths, in order:
+      1. Form-gated (_find_correction): drugName states a form/route -- never crosses to a
+         different form, requires a high same-form confidence score, disambiguates same-
+         brand/same-form ties using the medication's own dose.
+      2. Bare-name fallback (_find_bare_name_correction), only tried when (1) found nothing
+         AND drugName states no form at all: always takes the single highest-scoring match
+         across the whole dataset, no confidence gate beyond a noise floor -- see that
+         function's docstring and this module's docstring for the accepted LASA-collision
+         tradeoff this carries.
+    Leaves dose/frequency/route/duration untouched, and leaves drugName alone (no key added)
+    whenever neither path finds a match -- including when the dataset itself is unavailable,
+    so this can never turn a working prescription flow into a broken one.
     """
     if not isinstance(medications, list):
         return medications
@@ -296,6 +370,8 @@ def correct_medication_names(medications: list, threshold: float = DEFAULT_MATCH
         if not original or not isinstance(original, str):
             continue
         corrected = _find_correction(original, dose=med.get("dose"), threshold=threshold)
+        if corrected is None and not _FORM_RE.search(original):
+            corrected = _find_bare_name_correction(original, dose=med.get("dose"))
         if corrected and corrected != original:
             med["drugName"] = corrected
             med["original_drug_name"] = original

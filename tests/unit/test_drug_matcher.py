@@ -47,17 +47,18 @@ def test_known_brand_names_from_the_reference_prescriptions_resolve_to_a_real_pr
     "Zanocin", "Calpol", "Augmentin", "Crocin", "Metrogyl",  # already correctly spelled brands
     "Diclofenac", "Aspirin", "Metformin", "Chloroquine",     # already correctly spelled generics
 ])
-def test_bare_generic_names_are_never_touched(bare_name):
+def test_closest_medicine_name_never_touches_bare_names(bare_name):
     """
-    Core design decision, not an incidental gap: a drugName with NO stated pharmaceutical
-    form/route is never corrected, even when it's already spelled perfectly (Zanocin, Aspirin)
-    or misspelled (see test_real_typos_are_corrected_to_the_right_brand, which uses the SAME
-    brand names but with a form word present and gets a real correction). Bare-name correction
-    was tried and reverted during development: "Aspirin"/"Diclofenac"/"Metformin"/"Chloroquine"
-    (all correctly spelled, real generic names) were being silently rewritten into a specific
-    branded dose+form product -- in Diclofenac's and Chloroquine's cases, into a DIFFERENT real
-    look-alike-sound-alike brand ("Dicofenac", "Chloroquin") scoring in the exact same range as
-    genuine typo fixes, which is not solvable by threshold tuning (see _find_correction).
+    closest_medicine_name/_find_correction's own hard design constraint: a drugName with NO
+    stated pharmaceutical form/route is never corrected by THIS function, even when it's
+    already spelled perfectly (Zanocin, Aspirin) or misspelled (see
+    test_real_typos_are_corrected_to_the_right_brand, which uses the SAME brand names but with
+    a form word present and gets a real correction). This is what eliminates the look-alike-
+    sound-alike (LASA) collision risk documented in _find_correction's docstring -- but see
+    TestBareNameCorrection below: correct_medication_names (the function actually used on real
+    prescriptions) now has a SEPARATE bare-name fallback that deliberately re-accepts this risk
+    for bare names specifically. This test only covers the lower-level, still-fully-guarded
+    closest_medicine_name/_find_correction.
     """
     assert drug_matcher.closest_medicine_name(bare_name) is None
 
@@ -107,13 +108,13 @@ def test_a_stated_form_restricts_candidates_to_that_same_form():
 
 def test_look_alike_sound_alike_collision_is_eliminated_for_bare_names_by_the_form_requirement():
     """
-    "Azithromycin 500" has no stated form/route, so it's never even considered for correction
-    -- eliminating (not just documenting) the look-alike-sound-alike collision with the real,
-    different brand "Zithromycin" that a form-free version of this matcher exhibited during
-    development (same root cause as test_bare_generic_names_are_never_touched). The general
-    problem class -- a differently-spelled real brand sharing the same stated form -- isn't
-    proven impossible, just meaningfully narrowed; not chased further here (see
-    _find_correction's docstring).
+    "Azithromycin 500" has no stated form/route, so _find_correction/closest_medicine_name
+    never even considers it for correction -- eliminating (not just documenting) the look-
+    alike-sound-alike collision with the real, different brand "Zithromycin" for THIS function
+    specifically. See TestBareNameCorrection::
+    test_bare_name_correction_knowingly_reintroduces_the_lasa_collision_for_common_drugs --
+    correct_medication_names (what real prescriptions actually go through) no longer has this
+    protection for bare names, by explicit product decision.
     """
     assert drug_matcher.closest_medicine_name("Azithromycin 500") is None
 
@@ -143,11 +144,20 @@ class TestCorrectMedicationNames:
         assert result[0]["drugName"] == "Electral Powder"
         assert "original_drug_name" not in result[0]
 
-    def test_bare_names_are_left_alone_even_inside_a_medications_list(self):
+    def test_bare_names_now_go_through_the_unguarded_fallback(self):
+        """
+        Behavior changed by explicit product decision (see drug_matcher.py's module docstring
+        and _find_bare_name_correction's docstring): bare names inside a real medications list
+        are no longer left untouched -- "Aspirin" cleanly self-matches (100% on its own
+        stripped base, no ambiguity) to a real dosed/formed product. This is the benign end of
+        the accepted tradeoff; see test_bare_name_correction_knowingly_reintroduces_the_lasa_
+        collision_for_common_drugs for the risky end.
+        """
         meds = [{"drugName": "Aspirin", "dose": "325mg", "route": "Oral"}]
         result = drug_matcher.correct_medication_names(meds)
-        assert result[0]["drugName"] == "Aspirin"
-        assert "original_drug_name" not in result[0]
+        assert result[0]["drugName"] != "Aspirin"
+        assert "aspirin" in result[0]["drugName"].lower()
+        assert result[0]["original_drug_name"] == "Aspirin"
 
     def test_tolerates_malformed_entries_without_raising(self):
         meds = [
@@ -193,6 +203,75 @@ class TestCorrectMedicationNames:
         """
         meds = [{"drugName": "Tablet Calpol", "dose": "500 mg"}]
         assert drug_matcher.correct_medication_names(meds)[0]["drugName"] == "Calpol 500mg Tablet"
+
+
+class TestBareNameCorrection:
+    """
+    _find_bare_name_correction / its wiring into correct_medication_names -- the unguarded
+    sibling of the form-gated path above, added by explicit product decision to catch typos
+    like "Ofloxil" (a doctor said "Ofloxin", ASR/LLM produced "Ofloxil" with no stated form)
+    that the form-gated path structurally can never see. See drug_matcher.py's module
+    docstring for the accepted tradeoff this carries.
+    """
+
+    def test_real_reported_case_ofloxil_gets_corrected_not_left_alone(self):
+        # The original bug report: "Ofloxil" (no form stated) reached the doctor's screen
+        # completely unchecked under the old form-gated-only behavior. It must now change.
+        result = drug_matcher._find_bare_name_correction("Ofloxil")
+        assert result is not None
+        assert result != "Ofloxil"
+
+    def test_ofloxil_resolves_to_floxsil_not_ofloxin_a_genuine_tie(self):
+        """
+        Pins down the ACTUAL resolved value, not just "some correction happened" -- worth
+        being explicit about because it's counter-intuitive. "Ofloxil" scores an EXACT tie
+        (85.71 on fuzz.ratio) between two different real products, "Ofloxin 50mg Oral
+        Suspension" and "Floxsil 500 Tablet" -- neither is a form/dose variant of the other,
+        they're unrelated brands that happen to be equidistant. With no dose provided to
+        disambiguate (see _disambiguate_tied_candidates), the tie resolves to whichever
+        appears first in the dataset -- an artifact of file order, not a considered choice.
+        If a doctor actually meant "Ofloxin", this "corrects" to the wrong real drug just as
+        readily as it can happen to land on the right one -- exactly the accepted risk.
+        """
+        assert drug_matcher._find_bare_name_correction("Ofloxil") == "Floxsil 500 Tablet"
+
+    def test_bare_name_correction_knowingly_reintroduces_the_lasa_collision_for_common_drugs(self):
+        """
+        Pins down the accepted tradeoff as INTENTIONAL current behavior, not a latent bug to
+        be "discovered" and reverted later: bare, CORRECTLY-spelled common generic names now
+        get silently rewritten to a different, real, wrong look-alike-sound-alike brand.
+        "Diclofenac" (no form/qualifier) scores higher against "Dicofenac Injection" (94.7)
+        than against the correct "Diclofenac Sodium Injection" (74.1, penalized by the extra
+        "Sodium" qualifier's length) -- so this misfires even with zero ASR/transcription
+        error involved, not just on a mishearing. See drug_matcher.py's module docstring.
+        """
+        assert drug_matcher._find_bare_name_correction("Diclofenac") == "Dicofenac Injection"
+        assert drug_matcher._find_bare_name_correction("Azithromycin") is not None
+        assert "zithromycin" in drug_matcher._find_bare_name_correction("Azithromycin").lower()
+
+    def test_noise_floor_rejects_input_unrelated_to_anything_in_the_dataset(self):
+        assert drug_matcher._find_bare_name_correction("Xyzzyxqqqq") is None
+
+    def test_empty_or_garbage_input_returns_none_without_raising(self):
+        assert drug_matcher._find_bare_name_correction("") is None
+        assert drug_matcher._find_bare_name_correction(None) is None
+        assert drug_matcher._find_bare_name_correction("   ") is None
+        assert drug_matcher._find_bare_name_correction("x") is None
+
+    def test_correct_medication_names_applies_the_bare_name_fallback_and_records_original(self):
+        meds = [{"drugName": "Ofloxil", "dose": "", "frequency": "", "route": "", "duration": ""}]
+        result = drug_matcher.correct_medication_names(meds)
+        assert result[0]["drugName"] == "Floxsil 500 Tablet"
+        assert result[0]["original_drug_name"] == "Ofloxil"
+
+    def test_form_gated_path_still_takes_priority_over_the_bare_name_fallback(self):
+        """A drugName that DOES state a form goes through _find_correction only -- the
+        bare-name fallback must never override a real, gated correction (or override the
+        gated path's decision to return None for an unmatchable formed name)."""
+        meds = [{"drugName": "Tablet Zanocine", "dose": "200 mg"}]
+        result = drug_matcher.correct_medication_names(meds)
+        assert "Zanocin" in result[0]["drugName"]
+        assert "tablet" in result[0]["drugName"].lower()
 
 
 class TestScribeIntegration:

@@ -5,8 +5,11 @@ burden of manually writing a discharge document from the chart): POST/GET
 consultations already captured elsewhere into an AI-generated summary, mirroring the
 scribe_transcript never-raises-always-backfills contract.
 """
+import copy
+
 import pytest
 
+from app import drug_matcher
 from tests.conftest import mock_groq_json
 
 
@@ -68,7 +71,11 @@ def test_generate_discharge_summary_full_content(client, head_nurse, patient_wit
     assert data["admission_summary"] == FULL_SUMMARY_RESULT["admissionSummary"]
     assert data["hospital_course"] == FULL_SUMMARY_RESULT["hospitalCourse"]
     assert data["discharge_diagnosis"] == FULL_SUMMARY_RESULT["dischargeDiagnosis"]
-    assert data["medications_at_discharge"] == FULL_SUMMARY_RESULT["medicationsAtDischarge"]
+    # app/drug_matcher.py fuzzy-corrects extracted medication names (including bare/formless
+    # names now -- see drug_matcher.py's module docstring) -- not verbatim passthrough.
+    assert data["medications_at_discharge"] == drug_matcher.correct_medication_names(
+        copy.deepcopy(FULL_SUMMARY_RESULT["medicationsAtDischarge"])
+    )
     assert data["follow_up_instructions"] == FULL_SUMMARY_RESULT["followUpInstructions"]
     assert data["condition_at_discharge"] == FULL_SUMMARY_RESULT["conditionAtDischarge"]
     assert data["generated_by"] == head_nurse.id

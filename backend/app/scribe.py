@@ -38,7 +38,8 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
    - Listen carefully to positive reports of symptoms
    - Do NOT hallucinate false-negatives unless the patient explicitly denies that symptom
 5. Handle spoken names, medicines, or measurements gracefully
-6. CLINICAL FINDINGS IN HPI: Any clinical findings mentioned MUST be explicitly included in the "hpi" field"""
+6. CLINICAL FINDINGS IN HPI: Any clinical findings (symptoms, examination findings, vitals, duration/progression of illness) mentioned MUST be explicitly included in the "hpi" field.
+7. NEVER include medication names, doses, frequencies, or other treatment/prescription details anywhere in "chiefComplaint" or "hpi" -- those belong EXCLUSIVELY in the "medications" array, even if the doctor mentions them in the same breath as a symptom (e.g. "for the fever I gave paracetamol" -> "fever" goes in hpi, "paracetamol" goes in medications, never both)."""
 
     def _post_with_retry(self, url: str, request_kwargs: dict, _retry: int = 0) -> dict:
         """
@@ -294,8 +295,8 @@ Transcript of conversation:
 
 Return a JSON object with the following structure:
 {{
-    "chiefComplaint": "Extracted patient complaints",
-    "hpi": "History of present illness with clinical findings",
+    "chiefComplaint": "Extracted patient complaints -- symptoms only, never medication names/doses",
+    "hpi": "History of present illness -- symptoms and clinical findings only. NEVER mention medication names, doses, or treatments here -- those go exclusively in the medications array below",
     "primaryDiagnosis": "Primary provisional clinical diagnosis",
     "differentialDiagnosis": "comma separated differential diagnoses",
     "medications": [

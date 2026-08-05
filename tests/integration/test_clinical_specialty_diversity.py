@@ -9,10 +9,12 @@ extraction, mocked per this repo's no-live-LLM policy -- the point is proving AI
 (storage, retrieval, response shape, persistence fidelity) handles the full clinical breadth
 correctly, not evaluating LLM accuracy (that boundary is documented in TEST_NOTES.md item 2).
 """
+import copy
+
 import pytest
 
 from tests.conftest import mock_groq_json
-from app import lab_test_matcher
+from app import drug_matcher, lab_test_matcher
 
 
 @pytest.fixture
@@ -250,7 +252,13 @@ def test_specialty_scenario_scribed_and_stored_correctly(client, doctor, auth_he
     data = resp.json()
     assert data["chiefComplaint"] == extraction["chiefComplaint"]
     assert data["primaryDiagnosis"] == extraction["primaryDiagnosis"]
-    assert data["medications"] == extraction["medications"]
+    # app/drug_matcher.py fuzzy-corrects extracted medication names against the real medicines
+    # dataset (including bare/formless names now -- see drug_matcher.py's module docstring)
+    # -- this pins down that correction, not verbatim passthrough, as the intended behavior,
+    # matching the same-idea lab-test-normalization check in
+    # test_specialty_scenario_full_detail_retrievable below. copy.deepcopy so this doesn't
+    # mutate the module-level SPECIALTY_CASES fixture data other parametrized cases here reuse.
+    assert data["medications"] == drug_matcher.correct_medication_names(copy.deepcopy(extraction["medications"]))
 
 
 @pytest.mark.parametrize("case_id,transcript,extraction", SPECIALTY_CASES, ids=[c[0] for c in SPECIALTY_CASES])
