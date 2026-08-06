@@ -9,8 +9,14 @@ What these tests verify, per case:
     Hinglish/English, containing vitals with unicode degree/superscript signs) without
     choking on size or encoding.
   - The mocked "model output" (built from that case's own known_diagnoses/known_medications,
-    i.e. ground truth transcribed from the same PDF) flows through untouched to the API
-    response and to the persisted Consultation row.
+    i.e. ground truth transcribed from the same PDF) flows through to the API response and the
+    persisted Consultation row unmangled -- EXCEPT for medications, which real POST /api/scribe
+    always runs through drug_matcher.correct_medication_names() before responding (see
+    scribe.py), same as a real request would; asserting against the raw fixture string there
+    would make this test lie about what the endpoint actually returns. Several of these real
+    reference-PDF medication names turned out to be exactly the case drug_matcher.py's
+    reseller-prefix/dose-safety fixes were written for (bare "Tab X mg" generics the matcher
+    couldn't previously see at all) -- see drug_matcher.py's module docstring.
   - raw_transcript is stored byte-for-byte (PHI-fidelity: a scribe that silently mangles or
     truncates the source transcript is a clinical-safety bug, not just a cosmetic one).
   - The consultation is retrievable only by the user who created it (existing user_id scoping
@@ -20,10 +26,12 @@ What these tests verify, per case:
 Traceability: each test is parametrized by CASES[i]["id"], and failure output includes
 source_pdf + case_label so a failure can be traced back to the exact PDF case.
 """
+import copy
 import re
 
 import pytest
 
+from app import drug_matcher
 from tests.from_data.fixtures import CASES
 from tests.conftest import mock_groq_json
 
@@ -66,7 +74,8 @@ def test_scribe_pipeline_persists_real_transcript_case(client, doctor, auth_head
     body = resp.json()
     assert body["primaryDiagnosis"] == case["known_diagnoses"][0]
     assert len(body["medications"]) == len(case["known_medications"])
-    assert [m["drugName"] for m in body["medications"]] == case["known_medications"]
+    expected_medications = drug_matcher.correct_medication_names(copy.deepcopy(mocked_output["medications"]))
+    assert [m["drugName"] for m in body["medications"]] == [m["drugName"] for m in expected_medications]
 
     consultations = client.get("/api/consultations", headers=auth_headers(doctor)).json()["consultations"]
     matching = [c for c in consultations if c["primary_diagnosis"] == case["known_diagnoses"][0]]
@@ -79,7 +88,7 @@ def test_scribe_pipeline_persists_real_transcript_case(client, doctor, auth_head
         f"raw_transcript for {case['source_pdf']} / {case['case_label']} was not stored "
         "byte-for-byte -- possible truncation or encoding mangling of source transcript"
     )
-    assert detail["medications"] == mocked_output["medications"]
+    assert detail["medications"] == expected_medications
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["id"] for c in CASES])

@@ -21,17 +21,19 @@ conservatism exists to avoid, both found live during development).
 Bare names (no stated form, e.g. "Diclofenac", "Ofloxil") go through a SEPARATE, deliberately
 unguarded path (_find_bare_name_correction): always take the single highest-scoring dataset
 match above a low noise floor, no confidence threshold. This is a conscious product decision,
-not an oversight -- accepted after being shown concretely that it reopens the exact LASA
-collision risk above on common drugs (verified live: a bare, correctly-spelled "Diclofenac"
-scores 94.7 against the real, different, WRONG "Dicofenac Injection" vs only 74.1 against the
-correct "Diclofenac Sodium Injection", because the extra qualifier word "Sodium" penalizes
-fuzz.ratio's length-sensitive score -- i.e. this can silently misfire on a perfectly-spoken,
-perfectly-transcribed drug name, not just an ASR mishearing). Chosen anyway because catching
-real typos on unguarded bare names (e.g. Whisper mis-transcribing "Ofloxin" as "Ofloxil", which
-only scores 85.7 -- below any threshold that would also exclude the LASA cases above) was
-judged worth more than the collision risk for this app's use case. If that tradeoff ever needs
-revisiting, the fix is a curated LASA confusion list (out of scope here), not a threshold
-tweak -- see _find_correction's docstring for why no threshold can separate the two classes.
+not an oversight -- accepted after being shown concretely that it CAN reopen a LASA collision
+risk on common drugs not covered by the reseller-prefix fix below (e.g. "Ofloxil" is a genuine
+85.7-score tie between two unrelated real brands, "Ofloxin" and "Floxsil" -- see
+test_ofloxil_resolves_to_floxsil_not_ofloxin_a_genuine_tie). Chosen anyway because catching
+real typos on unguarded bare names (e.g. Whisper mis-transcribing "Ofloxin" as "Ofloxil") was
+judged worth more than that residual collision risk for this app's use case. (An earlier version
+of this risk analysis also cited "Diclofenac" colliding with "Dicofenac Injection" at 94.7 vs
+only 74.1 for the correct "Diclofenac Sodium Injection" -- that specific case is now fixed: see
+_RESELLER_RE, which strips the "StayHappi"/"DavaIndia"/"Genericart" reseller-house prefix that
+was diluting the correct entry's score, so "Diclofenac" now matches its own real dataset entry
+at a perfect 100 instead.) If the remaining tradeoff ever needs revisiting, the fix is a curated
+LASA confusion list (out of scope here), not a threshold tweak -- see _find_correction's
+docstring for why no threshold can separate the two classes.
 
 Matching strategy: dataset names embed strength/form in the string itself
 ("Zanocin 200 Tablet", "Calpol 500mg Tablet"), which would dominate a naive full-string fuzzy
@@ -60,6 +62,7 @@ from pathlib import Path
 from typing import Optional
 
 from rapidfuzz import fuzz, process
+from metaphone import doublemetaphone
 
 DATA_PATH = Path(__file__).resolve().parent / "data" / "medicine_names.csv"
 CUSTOM_DATA_PATH = Path(__file__).resolve().parent / "data" / "custom_medicines.csv"
@@ -75,6 +78,24 @@ CUSTOM_DATA_PATH = Path(__file__).resolve().parent / "data" / "custom_medicines.
 # dataset would need this re-validated the same way.
 DEFAULT_MATCH_THRESHOLD = 92.0
 
+# Floor for the form-gated phonetic-rescue pass in _find_correction: a candidate scoring below
+# `threshold` on spelling (fuzz.ratio) alone is only rescued if it ALSO shares a double-
+# metaphone code with the query -- this is the floor for even being considered for that second
+# check, not a threshold in its own right (matches BARE_NAME_NOISE_FLOOR's reasoning: below
+# this, a candidate is noise regardless of what else agrees with it). Verified live: real
+# ASR-drift cases this rescues -- "Panthoprazole"/"Rebeprazol"/"Montilucast"/"Ofloxasin" for
+# Pantoprazole/Rabeprazole/Montelukast/Ofloxacin -- score 78-89 on fuzz.ratio alone (below
+# `threshold`) but have an EXACT double-metaphone code match with the correct entry. Checked
+# against every existing LASA-collision/false-positive regression case in this test suite
+# (Diclofenac/Dicofenac, Azithromycin/Zithromycin, Electral Powder, the form-swap cases) --
+# none of them share a phonetic code with their wrong near-match, so this pass doesn't
+# reintroduce them. Chloroquine/Chloroquin is the one documented exception: they share both a
+# high fuzz.ratio AND an identical phonetic code (they're genuinely near-homophones), so
+# phonetic agreement cannot and does not resolve that specific pair -- it was never claimed to
+# solve LASA collisions in general, only to safely recover cases where the SPELLING drifted
+# further than typo-distance but the SOUND didn't drift at all.
+PHONETIC_RESCUE_FLOOR = 80.0
+
 # A stripped base shorter than this is almost certainly a stray fragment (dataset entries that
 # are mostly/entirely dose+form words) rather than a real brand name, and short strings produce
 # unreliably high `fuzz.ratio` scores against other short strings by chance alone -- excluded
@@ -85,8 +106,46 @@ _FORM_WORDS = (
     r"tablets?|capsules?|syrups?|injections?|creams?|ointments?|powders?|gels?|drops?|"
     r"suspensions?|solutions?|liquids?|sprays?|inhalers?|sachets?|patches?|soaps?|shampoos?|"
     r"lozenges?|granules?|kits?|strips?|suppositor(?:y|ies)|chewable|effervescent|paediatric|"
-    r"redi|mouthwash|toothpaste|lotions?|elixir|gargle|infant|infants|oral|nasal|eye|ear|topical"
+    r"redi|mouthwash|toothpaste|lotions?|elixir|gargle|infant|infants|oral|nasal|eye|ear|topical|"
+    # Standard Indian Rx shorthand ("Tab X", "Cap X", "Inj X" -- this app's OWN OPD pipeline's
+    # actual real-world convention, per tests/from_data/fixtures.py and this module's own
+    # docstrings) -- verified live these were NEVER actually matched by the words above ("tab"
+    # is not "tablets?"), so every abbreviated-form medication was silently treated as a BARE
+    # name and fell through to the unguarded bare-name path instead of the form-gated,
+    # same-form-only one. That's not a cosmetic gap: verified live, "Tab Vitamin C 500 mg"
+    # matched a real "Vitamin C Injection" dataset entry through the unguarded path -- a
+    # silent oral-to-injectable route swap, exactly the danger class the form gate exists to
+    # prevent, on what is this app's DOMINANT real prescribing format. See _FORM_ALIASES for
+    # how these normalize against the dataset's own full-word form labels.
+    r"tabs?|caps?|inj|syr|syp|susp|oint|sol|soln|drp|amp|supp"
 )
+# Maps every literal form word/abbreviation _FORM_RE can match to one canonical label, so a
+# query's abbreviated "Tab"/"Cap"/"Inj" is recognized as the SAME form as a dataset entry's
+# spelled-out "Tablet"/"Capsule"/"Injection" -- without this, adding the abbreviations above to
+# _FORM_WORDS would be useless: _find_correction's `forms[i] == query_form` comparison is a
+# literal string match, and "tab" != "tablet" even though they mean the same thing.
+_FORM_ALIASES = {
+    "tab": "tablet", "tabs": "tablet",
+    "cap": "capsule", "caps": "capsule",
+    "inj": "injection",
+    "syr": "syrup", "syp": "syrup",
+    "susp": "suspension",
+    "oint": "ointment",
+    "sol": "solution", "soln": "solution",
+    "drp": "drops",
+    "amp": "injection",
+    "supp": "suppository", "suppository": "suppository", "suppositories": "suppository",
+}
+
+
+def _canonical_form(matched_text: str) -> str:
+    """Normalizes a raw _FORM_RE match (whatever literal word/abbreviation it found) to one
+    canonical per-form-family label via _FORM_ALIASES, falling back to the lowercased match
+    itself for words with no alias entry (e.g. "gel", "spray" -- already canonical as-is)."""
+    lowered = matched_text.lower()
+    return _FORM_ALIASES.get(lowered, lowered)
+
+
 # Deliberately NOT stripped, unlike the packaging words above: "Plus"/"Forte" mark a genuinely
 # different combination formulation in Indian pharma brand naming (e.g. "Calpol" plain
 # paracetamol vs "Calpol Plus" a different active-ingredient combination), and "ER/SR/CR/XR/
@@ -100,11 +159,47 @@ _FORM_RE = re.compile(rf"\b(?:{_FORM_WORDS})\b", re.IGNORECASE)
 _PUNCT_RE = re.compile(r"[^\w\s-]")
 _WS_RE = re.compile(r"\s+")
 
+# Generic-medicine reseller chains that prefix EVERY one of their SKUs with their own house
+# name in this dataset (e.g. "DavaIndia Pantoprazole 40mg Tablet", "StayHappi Rabeprazole
+# 40mg Tablet") -- verified directly against medicine_names.csv: for common plain generics
+# (Pantoprazole, Azithromycin, Levocetirizine, Rabeprazole, ...) EVERY tablet-form dataset
+# entry comes from one of these three resellers or is a multi-drug combination product; there
+# is no bare "Pantoprazole Tablet" entry at all. Left unstripped, that house-name token bloats
+# the base string's length, and fuzz.ratio is length-normalized -- so a query like "Tablet
+# Panthoprazole" (ASR drift, not even a bad typo) scored the correct "DavaIndia Pantoprazole
+# 40mg Tablet" so low it didn't even place in the top-5 nearest bases; an unrelated short
+# brand name won instead. Stripping the reseller name here (verified live: fixes Panthoprazole
+# -> Pantoprazole, Azithromycine -> Azithromycin, Levocetrizine -> Levocetirizine, with zero
+# change to any existing positive/negative test case) restores the intended "brand/generic name
+# only" comparison this function's docstring already promises.
+_RESELLER_RE = re.compile(r"\b(?:stayhappi|davaindia|genericart)\b", re.IGNORECASE)
+# Matches _RESELLER_RE plus any whitespace immediately after it, so stripping from a display
+# string ("StayHappi Aceclofenac 100mg Tablet") doesn't leave a leading space behind.
+_RESELLER_PREFIX_RE = re.compile(r"^(?:stayhappi|davaindia|genericart)\s+", re.IGNORECASE)
+
+
+def _for_display(full_name: str) -> str:
+    """
+    Strips a reseller house-name prefix (see _RESELLER_RE) from a dataset name right before
+    it's substituted into a doctor-facing prescription. _strip_to_base already ignores this
+    prefix for MATCHING purposes, but until this existed the matched candidate's raw,
+    unstripped name (reseller prefix included) was substituted back in verbatim -- so a
+    correctly-spelled "Aceclofenac" or a fixed typo would come back as "StayHappi Aceclofenac
+    100mg Tablet", silently attributing the prescription to a specific retail pharmacy chain's
+    SKU that the doctor never said and that has no clinical meaning. This only ever removes a
+    LEADING reseller name (dataset entries never have one mid-string), leaving the real
+    strength/form information -- the whole reason the full name is substituted instead of the
+    bare base -- untouched.
+    """
+    return _RESELLER_PREFIX_RE.sub("", full_name)
+
 
 def _strip_to_base(name: str) -> str:
-    """Reduces a medicine name to just its brand/generic-name tokens: strips dose numbers+units
-    and common form/pack words, drops punctuation, lowercases, collapses whitespace."""
-    s = _DOSE_RE.sub(" ", name)
+    """Reduces a medicine name to just its brand/generic-name tokens: strips dose numbers+units,
+    common form/pack words, and known reseller house-name prefixes, drops punctuation,
+    lowercases, collapses whitespace."""
+    s = _RESELLER_RE.sub(" ", name)
+    s = _DOSE_RE.sub(" ", s)
     s = _FORM_RE.sub(" ", s)
     s = _PUNCT_RE.sub(" ", s)
     return _WS_RE.sub(" ", s).strip().lower()
@@ -114,6 +209,7 @@ _load_lock = threading.Lock()
 _full_names: Optional[list] = None
 _bases: Optional[list] = None
 _forms: Optional[list] = None
+_phonetics: Optional[list] = None
 
 
 def _read_names(path: Path) -> list:
@@ -130,23 +226,24 @@ def _load() -> tuple:
     file just means every lookup finds nothing, same as the "no confident match" case --
     callers keep whatever name they already had. Precomputes each entry's form word
     (Tablet/Syrup/Gel/...), if any, alongside its stripped base -- see the hard form
-    constraint in _find_correction for why this matters."""
-    global _full_names, _bases, _forms
+    constraint in _find_correction for why this matters -- and its double-metaphone phonetic
+    codes, used by the phonetic-rescue path (see PHONETIC_RESCUE_FLOOR)."""
+    global _full_names, _bases, _forms, _phonetics
     if _full_names is not None:
-        return _full_names, _bases, _forms
+        return _full_names, _bases, _forms, _phonetics
     with _load_lock:
         if _full_names is not None:  # another thread may have finished loading while we waited
-            return _full_names, _bases, _forms
+            return _full_names, _bases, _forms, _phonetics
         _rebuild()
-    return _full_names, _bases, _forms
+    return _full_names, _bases, _forms, _phonetics
 
 
 def _rebuild() -> None:
     """(Re)builds the in-memory index from disk. Called on first use, and again by
     invalidate_cache() after an admin adds a custom medicine, so the new entry is matchable
     immediately without restarting the server."""
-    global _full_names, _bases, _forms
-    full_names, bases, forms = [], [], []
+    global _full_names, _bases, _forms, _phonetics
+    full_names, bases, forms, phonetics = [], [], [], []
     try:
         names = _read_names(DATA_PATH) + _read_names(CUSTOM_DATA_PATH)
     except OSError:
@@ -160,17 +257,32 @@ def _rebuild() -> None:
         form_match = _FORM_RE.search(name)
         full_names.append(name)
         bases.append(base)
-        forms.append(form_match.group(0).lower() if form_match else None)
-    _full_names, _bases, _forms = full_names, bases, forms
+        forms.append(_canonical_form(form_match.group(0)) if form_match else None)
+        # doublemetaphone() on ~249k names costs ~5s, paid once at first lookup (or on an admin
+        # custom-medicine add, which is rare), not per query -- see PHONETIC_RESCUE_FLOOR for
+        # why this is worth precomputing rather than computed lazily per candidate per query.
+        phonetics.append(doublemetaphone(base))
+    _full_names, _bases, _forms, _phonetics = full_names, bases, forms, phonetics
 
 
 def invalidate_cache() -> None:
     """Forces the next lookup to reload from disk -- call after writing a new row to
     custom_medicines.csv so an admin-added medicine is usable in the same process without a
     restart."""
-    global _full_names, _bases, _forms
+    global _full_names, _bases, _forms, _phonetics
     with _load_lock:
-        _full_names = _bases = _forms = None
+        _full_names = _bases = _forms = _phonetics = None
+
+
+def _phonetic_agrees(query_codes: tuple, candidate_codes: tuple) -> bool:
+    """True if the query and a candidate share a non-empty double-metaphone code (primary or
+    secondary, in either combination) -- independent, different-mechanism evidence they're the
+    same SPOKEN word, not just similarly spelled (see PHONETIC_RESCUE_FLOOR). Empty-string
+    codes (very short/degenerate bases produce these) never count as a match against each
+    other, or two unrelated short bases would trivially "agree" on phonetic grounds."""
+    q = {c for c in query_codes if c}
+    c = {c for c in candidate_codes if c}
+    return bool(q & c)
 
 
 # How close two candidates' scores must be to count as "tied" for dose/form disambiguation
@@ -188,6 +300,34 @@ def _extract_dose_number(text) -> Optional[str]:
     return m.group(0) if m else None
 
 
+def _dose_number_appears(dose_number: str, text: str) -> bool:
+    """
+    True if `dose_number` (e.g. "5", "500", "0.5") appears in `text` as a standalone number,
+    not as part of a longer one. NOT just a digit-adjacency check: `(?<!\\d)` alone still
+    treats "5" as "standalone" inside "0.5" (the character immediately before is ".", not a
+    digit) -- verified live, this exact gap let "Tab Sorbitrate 5 mg" (an angina medication)
+    match a real "...0.5mg..." dataset entry, a 10x dosing error, right after the digit-
+    adjacency check was added specifically to prevent silent dose changes. Excluding "." on
+    both sides too closes that: "5" no longer falsely matches inside "0.5" or "5.5".
+    """
+    return bool(re.search(rf"(?<![\d.]){re.escape(dose_number)}(?![\d.])", text))
+
+
+def _adds_unstated_combination_ingredient(query_name: str, candidate_full_name: str) -> bool:
+    """
+    True if the candidate is a multi-active-ingredient combination product (dataset names
+    join actives with "+", e.g. "Gabapentin+Methylcobalamin") but the query itself never
+    indicated more than one ingredient -- accepting it would silently add a whole extra drug
+    to the patient's medication list, not correct a spelling. Verified live as a real, active
+    bug: plain "Methylcobalamin" (a vitamin) matched a real "Gabapentin+Methylcobalamin"
+    combination product at the bare-name noise floor, silently adding Gabapentin -- a
+    prescription anticonvulsant nobody prescribed -- to the prescription. A query that's
+    already itself stated as a combination ("X + Y") is unaffected; this only protects
+    single-ingredient queries.
+    """
+    return "+" in candidate_full_name and "+" not in query_name
+
+
 def _disambiguate_tied_candidates(tied: list, full_names: list, drug_name: str, dose) -> str:
     """
     Among dataset entries that tied on base-name similarity (and, if the query stated a form,
@@ -198,7 +338,7 @@ def _disambiguate_tied_candidates(tied: list, full_names: list, drug_name: str, 
     medication's own dose field. Falls back to the first tied entry (dataset order) if the dose
     doesn't narrow it down either.
     """
-    dose_number = _extract_dose_number(dose)
+    dose_number = _extract_dose_number(dose) or _extract_dose_number(drug_name)
 
     def _preference_score(candidate) -> int:
         _, _, index = candidate
@@ -206,15 +346,16 @@ def _disambiguate_tied_candidates(tied: list, full_names: list, drug_name: str, 
         # Not a `\b...\b` word-boundary match: "500" and "mg" in "500mg" are both `\w`
         # characters with no boundary between them, so `\b500\b` would never match inside a
         # dataset name like "Calpol 500mg Tablet" -- checked live, this silently picked the
-        # wrong strength (1000mg) before being caught. Match on digit-adjacency instead: not
-        # preceded/followed by another digit, so "500" matches in "500mg" but not in "1500mg".
-        if dose_number and re.search(rf"(?<!\d){re.escape(dose_number)}(?!\d)", name_lower):
+        # wrong strength (1000mg) before being caught. _dose_number_appears is digit- AND
+        # decimal-point-adjacency-safe (plain digit-adjacency alone still matches "5" inside
+        # "0.5" -- verified live as a real 10x dosing error before that helper existed).
+        if dose_number and _dose_number_appears(dose_number, name_lower):
             return 1
         return 0
 
     best = max(tied, key=_preference_score)
     _, _, index = best
-    return full_names[index]
+    return _for_display(full_names[index])
 
 
 def _find_correction(drug_name: str, dose=None, threshold: float = DEFAULT_MATCH_THRESHOLD) -> Optional[str]:
@@ -247,6 +388,13 @@ def _find_correction(drug_name: str, dose=None, threshold: float = DEFAULT_MATCH
          practice, real prescriptions from this app's own OPD pipeline consistently state a
          form ("Tab X", "Tablet X" -- see tests/from_data/fixtures.py), so this still covers
          the dominant real-world case without gambling on bare generic names.
+
+    Below `threshold`, one more path runs before giving up: PHONETIC_RESCUE_FLOOR (see its own
+    docstring) -- catches ASR-style mishearings (e.g. "Panthoprazole", "Rebeprazol",
+    "Montilucast" for Pantoprazole/Rabeprazole/Montelukast) that plain fuzz.ratio scores too low
+    to trust on spelling alone, but whose double-metaphone phonetic code is IDENTICAL to the
+    query's -- independent, different-mechanism corroboration that lets these be accepted
+    without lowering the spelling-only bar (which would reopen the LASA risk above).
     """
     if not drug_name or not isinstance(drug_name, str):
         return None
@@ -255,11 +403,11 @@ def _find_correction(drug_name: str, dose=None, threshold: float = DEFAULT_MATCH
         return None
 
     form_match = _FORM_RE.search(drug_name)
-    query_form = form_match.group(0).lower() if form_match else None
+    query_form = _canonical_form(form_match.group(0)) if form_match else None
     if not query_form:
         return None
 
-    full_names, bases, forms = _load()
+    full_names, bases, forms, phonetics = _load()
     if not bases:
         return None
 
@@ -267,15 +415,58 @@ def _find_correction(drug_name: str, dose=None, threshold: float = DEFAULT_MATCH
     if not eligible:
         return None
     subset_bases = [bases[i] for i in eligible]
-    raw = process.extract(query_base, subset_bases, scorer=fuzz.ratio, score_cutoff=threshold, limit=50)
+    # score_cutoff is min(threshold, PHONETIC_RESCUE_FLOOR), not just `threshold` -- candidates
+    # between the two are still fetched so the phonetic-rescue pass below has something to
+    # check (they're only ACCEPTED there if phonetics also agree, so this doesn't by itself
+    # loosen anything); min(...) rather than the floor outright so a caller passing a custom
+    # threshold BELOW the floor (e.g. tests probing threshold=1) still gets candidates that low
+    # instead of the floor silently overriding it.
+    raw = process.extract(query_base, subset_bases, scorer=fuzz.ratio,
+                           score_cutoff=min(threshold, PHONETIC_RESCUE_FLOOR), limit=50)
     matches = [(text, score, eligible[local_index]) for text, score, local_index in raw]
-
     if not matches:
         return None
-    top_score = matches[0][1]
-    tied = [m for m in matches if m[1] >= top_score - _TIE_MARGIN]
+
+    # Safety filter BEFORE any score-based selection -- a candidate that would silently add an
+    # unstated combination ingredient is never eligible, regardless of how high it scores on
+    # spelling alone (see _adds_unstated_combination_ingredient's docstring). Dose safety is
+    # handled differently, in _disambiguate_tied_candidates below, not here: same-drug
+    # different-strength dataset entries always score IDENTICALLY (dose is stripped before
+    # scoring), so they're always genuine ties, never a "best match has the wrong dose, fall
+    # back to a worse-but-safer one" situation -- a hard pre-filter here was tried and reverted
+    # after it caused exactly that failure mode live ("Aspirin" prescribed at "325mg", a real
+    # but not dataset-listed strength, fell through past every real Aspirin entry to an
+    # unrelated "Spirodin Injection" because none of the real Aspirin entries stated exactly
+    # "325"). Preferring a dose-matching candidate only AMONG genuine ties has no equivalent
+    # failure mode.
+    matches = [m for m in matches if not _adds_unstated_combination_ingredient(drug_name, full_names[m[2]])]
+    if not matches:
+        return None
+
+    high_confidence = [m for m in matches if m[1] >= threshold]
+    if high_confidence:
+        top_score = high_confidence[0][1]
+        tied = [m for m in high_confidence if m[1] >= top_score - _TIE_MARGIN]
+        if len(tied) == 1:
+            return _for_display(full_names[tied[0][2]])
+        return _disambiguate_tied_candidates(tied, full_names, drug_name, dose)
+
+    # Phonetic rescue operates in a FIXED [PHONETIC_RESCUE_FLOOR, DEFAULT_MATCH_THRESHOLD) band,
+    # independent of a caller-supplied `threshold` override -- a custom threshold changes how
+    # strict the plain spelling-only path above is, not this separate, empirically-calibrated
+    # mechanism (verified live: without this cap, a test passing threshold=100 to mean "only an
+    # exact base match" could still get a sub-100 phonetic-rescue result).
+    query_codes = doublemetaphone(query_base)
+    phonetic_matches = [
+        m for m in matches
+        if m[1] < DEFAULT_MATCH_THRESHOLD and _phonetic_agrees(query_codes, phonetics[m[2]])
+    ]
+    if not phonetic_matches:
+        return None
+    top_score = phonetic_matches[0][1]
+    tied = [m for m in phonetic_matches if m[1] >= top_score - _TIE_MARGIN]
     if len(tied) == 1:
-        return full_names[tied[0][2]]
+        return _for_display(full_names[tied[0][2]])
     return _disambiguate_tied_candidates(tied, full_names, drug_name, dose)
 
 
@@ -319,7 +510,7 @@ def _find_bare_name_correction(drug_name: str, dose=None, threshold: float = BAR
     if len(query_base) < MIN_BASE_LENGTH:
         return None
 
-    full_names, bases, forms = _load()
+    full_names, bases, forms, _phonetics_unused = _load()
     if not bases:
         return None
 
@@ -327,10 +518,21 @@ def _find_bare_name_correction(drug_name: str, dose=None, threshold: float = BAR
     matches = [(text, score, index) for text, score, index in raw]
     if not matches:
         return None
+
+    # Same combination-ingredient safety filter as _find_correction -- see its docstring and
+    # _adds_unstated_combination_ingredient's. Especially important here: this path is
+    # UNGUARDED (no confidence threshold beyond the noise floor), so a wrong-combination
+    # candidate winning on spelling alone had nothing else standing in its way before this
+    # existed. Dose safety is handled via tie-break preference below, not a hard filter here --
+    # see the comment in _find_correction for why a hard dose filter was tried and reverted.
+    matches = [m for m in matches if not _adds_unstated_combination_ingredient(drug_name, full_names[m[2]])]
+    if not matches:
+        return None
+
     top_score = matches[0][1]
     tied = [m for m in matches if m[1] >= top_score - _TIE_MARGIN]
     if len(tied) == 1:
-        return full_names[tied[0][2]]
+        return _for_display(full_names[tied[0][2]])
     return _disambiguate_tied_candidates(tied, full_names, drug_name, dose)
 
 

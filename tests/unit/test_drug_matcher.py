@@ -18,9 +18,9 @@ from app import drug_matcher
 
 
 def test_dataset_loads_and_has_a_realistic_number_of_entries():
-    full_names, bases, forms = drug_matcher._load()
+    full_names, bases, forms, phonetics = drug_matcher._load()
     assert len(full_names) > 200_000
-    assert len(full_names) == len(bases) == len(forms)
+    assert len(full_names) == len(bases) == len(forms) == len(phonetics)
 
 
 @pytest.mark.parametrize("misspelled,expected_substring", [
@@ -41,6 +41,59 @@ def test_known_brand_names_from_the_reference_prescriptions_resolve_to_a_real_pr
     # the corrected name must still carry the same brand token, not drift to an unrelated product
     base_token = form_stated_name.replace("Tablet", "").strip().split()[0].lower()
     assert base_token in result.lower()
+
+
+@pytest.mark.parametrize("query,expected_substring", [
+    # These are common generics whose ONLY dataset entries (verified directly against
+    # medicine_names.csv) come from a reseller chain that prefixes every SKU with its own
+    # house name ("DavaIndia Pantoprazole 40mg Tablet", "DavaIndia Azithromycin 250mg
+    # Tablet", ...) or a combination product. Before _RESELLER_RE existed, that unstripped
+    # prefix bloated the stripped base's length enough that fuzz.ratio scored the correct
+    # entry too low to even place in the nearest-candidates list -- a mild ASR-style misspelling
+    # of any of these resolved to None (left uncorrected) even though the right drug was in the
+    # dataset the whole time. Pins down the fix, not just the reseller-stripping mechanism.
+    ("Tablet Panthoprazole", "pantoprazole"),
+    ("Tablet Azithromycine", "azithromycin"),
+    ("Tablet Levocetrizine", "levocetirizine"),
+])
+def test_reseller_prefixed_generics_are_found_despite_the_house_name_prefix(query, expected_substring):
+    result = drug_matcher.closest_medicine_name(query)
+    assert result is not None, f"expected a confident correction for {query!r}, got None"
+    assert expected_substring in result.lower()
+
+
+@pytest.mark.parametrize("query,expected_substring", [
+    # ASR-style mishearings, not simple typos: spelling drifts further than
+    # DEFAULT_MATCH_THRESHOLD tolerates on fuzz.ratio alone (each scores 78-89, verified
+    # live), but the SOUND didn't drift -- double-metaphone gives an exact code match against
+    # the correct dataset entry. Before PHONETIC_RESCUE_FLOOR existed, every one of these
+    # resolved to None (left uncorrected) despite the right drug being in the dataset.
+    ("Tablet Panthoprazole", "pantoprazole"),
+    ("Tablet Rebeprazol", "rabeprazole"),
+    ("Tablet Montilucast", "montelukast"),
+    ("Tablet Ofloxasin", "ofloxacin"),
+])
+def test_phonetic_rescue_catches_asr_style_mishearings_plain_fuzz_ratio_misses(query, expected_substring):
+    result = drug_matcher.closest_medicine_name(query)
+    assert result is not None, f"expected a phonetic-rescue correction for {query!r}, got None"
+    assert expected_substring in result.lower()
+
+
+def test_phonetic_rescue_still_rejects_same_score_band_candidates_that_sound_different():
+    """
+    Proves the phonetic gate is discriminating, not a rubber stamp for "anything in the
+    PHONETIC_RESCUE_FLOOR..threshold band": "Xantoprazole" and "Wantoprazole" score exactly the
+    same fuzz.ratio (91.7) against the real "Pantoprazole" as "Bantoprazole" does -- pure edit
+    distance treats a leading X/W/B swap identically -- but only "Bantoprazole" is rescued.
+    Double-metaphone encodes B and P as the same phonetic value (both labial-stop consonants,
+    "PNTPRSL" for both "bantoprazole" and "pantoprazole") while X and W are not, so those two
+    correctly stay unmatched (None) even though nothing about their fuzz.ratio score
+    distinguishes them from the case that IS rescued.
+    """
+    assert drug_matcher.closest_medicine_name("Tablet Bantoprazole") is not None
+    assert "pantoprazole" in drug_matcher.closest_medicine_name("Tablet Bantoprazole").lower()
+    assert drug_matcher.closest_medicine_name("Tablet Xantoprazole") is None
+    assert drug_matcher.closest_medicine_name("Tablet Wantoprazole") is None
 
 
 @pytest.mark.parametrize("bare_name", [
@@ -235,19 +288,27 @@ class TestBareNameCorrection:
         """
         assert drug_matcher._find_bare_name_correction("Ofloxil") == "Floxsil 500 Tablet"
 
-    def test_bare_name_correction_knowingly_reintroduces_the_lasa_collision_for_common_drugs(self):
+    def test_bare_name_correction_no_longer_collides_on_reseller_listed_generics(self):
         """
-        Pins down the accepted tradeoff as INTENTIONAL current behavior, not a latent bug to
-        be "discovered" and reverted later: bare, CORRECTLY-spelled common generic names now
-        get silently rewritten to a different, real, wrong look-alike-sound-alike brand.
-        "Diclofenac" (no form/qualifier) scores higher against "Dicofenac Injection" (94.7)
-        than against the correct "Diclofenac Sodium Injection" (74.1, penalized by the extra
-        "Sodium" qualifier's length) -- so this misfires even with zero ASR/transcription
-        error involved, not just on a mishearing. See drug_matcher.py's module docstring.
+        Was pinned as a KNOWN-BAD tradeoff (bare "Diclofenac"/"Azithromycin", correctly
+        spelled, silently rewritten to a different, real, wrong look-alike-sound-alike brand
+        -- "Dicofenac Injection", "Zithromycin ..."), caused by _strip_to_base not stripping
+        the reseller house-name prefix ("StayHappi"/"DavaIndia"/"Genericart") that every
+        plain-generic dataset entry for these drugs carries. That bloated those entries'
+        stripped-base length enough that fuzz.ratio scored the WRONG, unprefixed LASA brand
+        higher than the CORRECT, reseller-prefixed generic. Stripping the reseller prefix
+        (see _RESELLER_RE) lets "Diclofenac"/"Azithromycin" match their own correct,
+        real dataset entry at a perfect/near-perfect score instead, which now legitimately
+        outscores the LASA collision -- verified live, not just for these two names. This does
+        NOT eliminate the LASA-collision risk category in general (see
+        test_ofloxil_resolves_to_floxsil_not_ofloxin_a_genuine_tie, and any generic not
+        distributed by these 3 resellers is still exposed), only for the specific
+        reseller-prefix-dilution mechanism that was causing it here.
         """
-        assert drug_matcher._find_bare_name_correction("Diclofenac") == "Dicofenac Injection"
-        assert drug_matcher._find_bare_name_correction("Azithromycin") is not None
-        assert "zithromycin" in drug_matcher._find_bare_name_correction("Azithromycin").lower()
+        result = drug_matcher._find_bare_name_correction("Diclofenac")
+        assert result is not None and "diclofenac" in result.lower()
+        result = drug_matcher._find_bare_name_correction("Azithromycin")
+        assert result is not None and "azithromycin" in result.lower()
 
     def test_noise_floor_rejects_input_unrelated_to_anything_in_the_dataset(self):
         assert drug_matcher._find_bare_name_correction("Xyzzyxqqqq") is None
