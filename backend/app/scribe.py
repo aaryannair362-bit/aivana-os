@@ -39,7 +39,8 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
    - Do NOT hallucinate false-negatives unless the patient explicitly denies that symptom
 5. Handle spoken names, medicines, or measurements gracefully
 6. CLINICAL FINDINGS IN HPI: Any clinical findings (symptoms, examination findings, vitals, duration/progression of illness) mentioned MUST be explicitly included in the "hpi" field.
-7. NEVER include medication names, doses, frequencies, or other treatment/prescription details anywhere in "chiefComplaint" or "hpi" -- those belong EXCLUSIVELY in the "medications" array, even if the doctor mentions them in the same breath as a symptom (e.g. "for the fever I gave paracetamol" -> "fever" goes in hpi, "paracetamol" goes in medications, never both)."""
+7. NEVER include medication names, doses, frequencies, or other treatment/prescription details anywhere in "chiefComplaint" or "hpi" -- those belong EXCLUSIVELY in the "medications" array, even if the doctor mentions them in the same breath as a symptom (e.g. "for the fever I gave paracetamol" -> "fever" goes in hpi, "paracetamol" goes in medications, never both).
+8. "medications" is EXCLUSIVELY for a specific, named, purchasable drug/product (a real medicine name -- "Paracetamol", "Betadine Gargle", "Crocin"), never a generic home-care or lifestyle instruction with no product name attached. "Gargle with warm salt water", "drink plenty of fluids", "rest for 2 days", "apply an ice pack", "steam inhalation" are ADVICE, not medications, even though the doctor phrases them as an instruction to do something ("gargle thrice a day with salt water" -> advice; "gargle thrice a day with Betadine" -> medications, because Betadine is a named product). If it has no product name, it is never a medication."""
 
     def _post_with_retry(self, url: str, request_kwargs: dict, _retry: int = 0) -> dict:
         """
@@ -302,7 +303,7 @@ Return a JSON object with the following structure:
     "medications": [
         {{"drugName": "", "dose": "", "frequency": "", "route": "", "duration": ""}}
     ],
-    "advice": "Clinical advice, warnings and instructions",
+    "advice": "Clinical advice, warnings and instructions -- INCLUDING generic home-care instructions with no named product (gargling with salt water, hydration, rest, ice/warm compress, steam inhalation, follow-up timing). These never belong in medications -- see system prompt rule 8",
     "labTests": ["list of recommended tests"]
 }}"""
         result = self._generate_json(prompt, temperature=0.3)

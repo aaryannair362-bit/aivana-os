@@ -15,6 +15,7 @@
 //   if (!recorder.isSupported()) { /* fall back to manual typing, same as before */ }
 //   await recorder.start();            // throws if mic permission denied
 //   const transcript = await recorder.stop();   // throws if upload/transcription fails
+//   recorder.getLevel();               // 0-1 live mic input level while recording, see below
 
 function createVoiceRecorder({ apiBase, getAuthToken }) {
     // Chrome/Firefox produce webm; Safari doesn't support webm at all and needs mp4. Groq's
@@ -25,6 +26,9 @@ function createVoiceRecorder({ apiBase, getAuthToken }) {
     let mediaRecorder = null;
     let stream = null;
     let chunks = [];
+    let audioCtx = null;
+    let analyser = null;
+    let levelData = null;
 
     function isSupported() {
         return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
@@ -33,6 +37,25 @@ function createVoiceRecorder({ apiBase, getAuthToken }) {
     function pickMimeType() {
         if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
         return MIME_CANDIDATES.find((t) => MediaRecorder.isTypeSupported(t)) || '';
+    }
+
+    // Live 0-1 input level (RMS of the current time-domain buffer), meant to be polled from a
+    // requestAnimationFrame loop while recording to drive a visual "yes, I can hear you" meter.
+    // Not transcription feedback (this app deliberately dropped live captions -- see the module
+    // comment above) -- purely a signal that the mic is actually picking up sound as the doctor
+    // talks, added because without ANY feedback during the silent recording phase, doctors
+    // reported having to speak unnaturally slowly/over-enunciate out of uncertainty that
+    // anything was being captured at all. Returns 0 when not recording or before the first
+    // analyser frame is available.
+    function getLevel() {
+        if (!analyser || !levelData) return 0;
+        analyser.getByteTimeDomainData(levelData);
+        let sumSquares = 0;
+        for (let i = 0; i < levelData.length; i++) {
+            const centered = (levelData[i] - 128) / 128;
+            sumSquares += centered * centered;
+        }
+        return Math.min(1, Math.sqrt(sumSquares / levelData.length) * 4);
     }
 
     async function start() {
@@ -49,6 +72,26 @@ function createVoiceRecorder({ apiBase, getAuthToken }) {
         });
         mediaRecorder.start();
         await started;
+
+        // Best-effort: a browser without Web Audio API (or one that throws on construction)
+        // just means getLevel() always returns 0 -- the recording/transcription path above is
+        // fully independent of this and must not be affected by it.
+        try {
+            const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContextCtor();
+            const source = audioCtx.createMediaStreamSource(stream);
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            levelData = new Uint8Array(analyser.frequencyBinCount);
+            // Deliberately NOT connected to audioCtx.destination -- this taps the stream for
+            // level metering only; routing it to output would echo the doctor's own mic back
+            // through their speakers.
+            source.connect(analyser);
+        } catch (err) {
+            audioCtx = null;
+            analyser = null;
+            levelData = null;
+        }
     }
 
     function stop() {
@@ -59,6 +102,12 @@ function createVoiceRecorder({ apiBase, getAuthToken }) {
             }
             const recorder = mediaRecorder;
             mediaRecorder = null;
+            if (audioCtx) {
+                audioCtx.close().catch(() => {});
+                audioCtx = null;
+                analyser = null;
+                levelData = null;
+            }
             recorder.onstop = async () => {
                 if (stream) {
                     stream.getTracks().forEach((t) => t.stop());
@@ -97,5 +146,5 @@ function createVoiceRecorder({ apiBase, getAuthToken }) {
         });
     }
 
-    return { start, stop, isSupported };
+    return { start, stop, isSupported, getLevel };
 }

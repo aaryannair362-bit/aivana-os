@@ -91,6 +91,14 @@
         #mic-status.listening { background: var(--clay-600); color: white; animation: pulse 1s infinite; }
         #mic-status.transcribing { background: var(--amber-700); color: var(--paper); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        /* Live mic input level while recording -- see voice-capture.js's getLevel(). Purely a
+           "yes, I can hear you" signal (there's no live transcript, by design -- Whisper only
+           runs once, after Stop), added because with zero feedback during recording, doctors
+           had no way to confirm the mic was picking up normal-paced speech. */
+        #mic-level-meter { display: inline-block; width: 64px; height: 10px; margin-left: 8px; vertical-align: middle;
+            background: var(--line); border-radius: 5px; overflow: hidden; }
+        #mic-level-bar { display: block; height: 100%; width: 0%; background: var(--sage-700, #2F6F52);
+            transition: width 80ms linear; }
 
         /* ---- clinical note ---- */
         .draft-fields > div { margin-bottom: 16px; }
@@ -238,6 +246,7 @@
                             <div>
                                 <button id="stop-consult-btn" class="btn-danger" style="display:none;">⏹ Stop &amp; Generate Note</button>
                                 <span id="mic-status" class="idle">Idle</span>
+                                <span id="mic-level-meter" style="display:none;"><span id="mic-level-bar"></span></span>
                             </div>
                         </div>
                         <textarea id="transcript-input" placeholder="Speak or paste transcript here..." rows="4"></textarea>
@@ -380,6 +389,7 @@ let refreshToken = localStorage.getItem('refresh_token') || null;
 let isConsulting = false;
 let voiceRecorder = null;
 let usingManualFallback = false;
+let micLevelRAF = null;
 let selectedPatientId = null;
 let currentConsultationId = null;
 let currentPatientName = '';
@@ -557,6 +567,25 @@ function setMicStatus(status, text) {
     micStatus.textContent = text;
 }
 
+const micLevelMeter = document.getElementById('mic-level-meter');
+const micLevelBar = document.getElementById('mic-level-bar');
+
+// Drives the live mic-level bar from voiceRecorder.getLevel() (see voice-capture.js) via
+// requestAnimationFrame -- the only feedback a doctor gets that the mic is actually picking up
+// their voice during the silent recording phase (there's no live transcript by design). Stops
+// itself once isConsulting flips false, rather than being explicitly cancelled from every call
+// site that ends recording, so it can't accidentally keep running past a Stop click.
+function driveMicLevelMeter() {
+    if (!isConsulting || usingManualFallback || !voiceRecorder) {
+        micLevelMeter.style.display = 'none';
+        micLevelRAF = null;
+        return;
+    }
+    const level = voiceRecorder.getLevel();
+    micLevelBar.style.width = Math.round(level * 100) + '%';
+    micLevelRAF = requestAnimationFrame(driveMicLevelMeter);
+}
+
 async function startVoiceCapture() {
     usingManualFallback = false;
     voiceRecorder = createVoiceRecorder({ apiBase: API_BASE, getAuthToken: () => accessToken });
@@ -584,7 +613,9 @@ async function startVoiceCapture() {
         clearDraft();
         setMicStatus('listening', 'Recording...');
         analysisStatus.className = '';
-        analysisStatus.textContent = '🎤 Recording...';
+        analysisStatus.textContent = '🎤 Recording... (bar shows your mic is picking up sound)';
+        micLevelMeter.style.display = 'inline-block';
+        if (micLevelRAF === null) micLevelRAF = requestAnimationFrame(driveMicLevelMeter);
     } catch (err) {
         console.error('Microphone permission denied:', err);
         usingManualFallback = true;
