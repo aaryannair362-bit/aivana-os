@@ -37,15 +37,17 @@ class Settings(BaseSettings):
     GROQ_AUDIO_MODEL: str = os.getenv("GROQ_AUDIO_MODEL", "whisper-large-v3")
     # Sarvam AI's Saaras v3 (sarvam_transcriber.py) -- an alternative audio-transcription
     # provider, purpose-built and benchmarked for Hindi/English code-switched speech
-    # specifically (verified live before this was added: real API calls against the actual
-    # key, confirmed contract, confirmed latency ~1.4s per <=30s chunk, confirmed the
-    # documented 30-second-per-request cap with a real 400 response). Opt-in via
-    # TRANSCRIPTION_PROVIDER, not a replacement of GROQ_AUDIO_MODEL's default -- "whisper"
-    # keeps today's exact, unchanged, working behavior; "sarvam" is the new path, meant to be
-    # A/B'd against it before ever becoming the default (same reasoning as GROQ_MODEL/
-    # GROQ_AUDIO_MODEL above: a provider swap is a Render env var toggle, not a code deploy).
+    # specifically. Verified live before this became the default: real API calls against the
+    # actual key confirmed the request/response contract, confirmed a <=30s chunk round-trips
+    # in ~1.4s, and confirmed the documented 30-second-per-request cap with a real 400
+    # response -- but NOT yet verified with a real recording through a real browser (only the
+    # API mechanics and the mocked unit/integration tests) -- see sarvam_transcriber.py's
+    # module docstring. Chosen as the default by explicit product decision despite that gap;
+    # if real-world results look wrong, this is a one-line Render env var revert to "whisper"
+    # (today's previously-default, still fully working, unchanged path), not a code deploy --
+    # same reasoning as GROQ_MODEL/GROQ_AUDIO_MODEL above.
     SARVAM_API_KEY: str = os.getenv("SARVAM_API_KEY", "")
-    TRANSCRIPTION_PROVIDER: str = os.getenv("TRANSCRIPTION_PROVIDER", "whisper")
+    TRANSCRIPTION_PROVIDER: str = os.getenv("TRANSCRIPTION_PROVIDER", "sarvam")
     # Comma-separated list of origins allowed to call the API. The frontend is same-origin
     # (served by this same FastAPI process, API_BASE = '/api'), so this only matters for local
     # dev on a different port/live-server and any future separately-hosted frontend.

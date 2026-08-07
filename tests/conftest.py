@@ -25,6 +25,14 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_PATH}"
 os.environ["SECRET_KEY"] = "test-secret-key-not-for-production"
 os.environ["GROQ_API_KEY"] = "test-dummy-groq-key"
 os.environ["GROQ_MODEL"] = "test-model"
+# Pinned regardless of the application's own default (config.py's TRANSCRIPTION_PROVIDER
+# default is "sarvam" as of this writing) -- the existing test suite's transcribe-audio
+# coverage assumes the "whisper" path throughout (test_transcribe_audio_endpoint.py,
+# test_scribe_audio_transcription.py, every e2e/scenarios test using
+# queue_transcription_result). Tests that specifically exercise the sarvam path override this
+# per-test via monkeypatch (see tests/integration/test_sarvam_transcription_provider.py's
+# sarvam_provider fixture) rather than relying on this global ever changing.
+os.environ["TRANSCRIPTION_PROVIDER"] = "whisper"
 # Many legitimate tests fire dozens of auth calls from the same test-client "IP" well within
 # a minute (bulk make_user() fixtures, concurrency tests' 20 simultaneous logins, etc.) --
 # the rate limiter is exercised by its own dedicated test instead (see test_rate_limiting.py).
