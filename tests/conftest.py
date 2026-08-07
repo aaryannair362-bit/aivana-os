@@ -77,6 +77,28 @@ def _no_live_groq_calls(monkeypatch):
     monkeypatch.setattr(app_main.scribe, "transcribe_audio", _blocked)
 
 
+@pytest.fixture(autouse=True)
+def _no_rate_limit_pacing_in_tests(monkeypatch):
+    """
+    Not every test goes through _no_live_groq_calls's mocked-at-the-method-boundary path --
+    tests/unit/test_scribe_json_parsing.py's retry/reasoning-format tests instantiate a fresh
+    ScribeEngine() directly and exercise the REAL _call_groq_api body (mocking only
+    requests.post), which means they for-real call into
+    rate_limiter.request_bucket/token_bucket -- the same module-level singletons production
+    uses, calibrated for llama-3.1-8b-instant's real rate limit, shared across the WHOLE test
+    session rather than reset per test. Enough such tests together can drain the small burst
+    capacity and trigger a genuine, unmocked time.sleep() inside rate_limiter.py -- a
+    DIFFERENT time.sleep reference than app.scribe.time.sleep, which those tests already
+    mock, so it would slip through uncaught and silently slow/hang the suite. Give every test
+    a fresh, effectively-unlimited bucket instead; the limiter's actual pacing behavior is
+    covered directly and deterministically by tests/unit/test_rate_limiter.py, which
+    constructs its own local TokenBucket instances and never touches these singletons.
+    """
+    from app import rate_limiter as rl
+    monkeypatch.setattr(rl, "request_bucket", rl.TokenBucket(rate_per_sec=1e6, capacity=1e6))
+    monkeypatch.setattr(rl, "token_bucket", rl.TokenBucket(rate_per_sec=1e6, capacity=1e6))
+
+
 @pytest.fixture
 def client():
     with TestClient(app_main.app) as c:

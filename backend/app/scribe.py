@@ -6,6 +6,7 @@ import requests
 from .config import settings
 from . import drug_matcher
 from . import lab_test_matcher
+from . import rate_limiter
 
 MAX_RATE_LIMIT_RETRIES = 3
 
@@ -103,6 +104,14 @@ Your absolute highest priority directive is to STRICTLY report the conversation:
             # below the first time that happens, so we stop asking for it on this model for
             # the rest of the process instead of eating a failed request every single call.
             payload["reasoning_format"] = "hidden"
+
+        # Proactive pacing BEFORE dispatch, not just reactive retry-after-429 (see
+        # rate_limiter.py's module docstring for the live incident that motivated this --
+        # concurrent OPD+IPD callers could 429 together and each independently sit in the
+        # retry loop below at the same time). Blocks this thread until it's this call's turn;
+        # under normal, non-concurrent usage the buckets are full and this returns immediately.
+        rate_limiter.request_bucket.consume(1)
+        rate_limiter.token_bucket.consume(rate_limiter.estimate_tokens(prompt, payload["max_tokens"]))
 
         try:
             data = self._post_with_retry(self.base_url, {"headers": headers, "json": payload, "timeout": 60})
