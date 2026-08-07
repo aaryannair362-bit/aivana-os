@@ -14,16 +14,16 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "qwen/qwen3.6-27b"
     # Whisper model used for POST /api/transcribe-audio (see scribe.py's transcribe_audio) --
     # a separate setting from GROQ_MODEL since it's a different model for a different Groq
-    # endpoint (audio translations, not chat completions). "-turbo" (not plain whisper-large-v3,
-    # and not distil-whisper-large-v3-en) -- turbo is Groq's distilled decoder, several times
-    # faster per Groq's own published benchmarks, while still multilingual (the distil-*-en
-    # variant is English-only, which would break Hinglish code-switched translation, the whole
-    # reason this endpoint exists -- see transcribe_audio's docstring). Recording-to-transcript
-    # latency was a live, reported complaint ("slow as fuck", doctors having to over-enunciate)
-    # -- this is the single biggest lever available on that without touching accuracy tradeoffs
-    # already made elsewhere (drug_matcher.py's correction pass is the safety net for whatever
-    # small accuracy cost turbo has over the full model).
-    GROQ_AUDIO_MODEL: str = os.getenv("GROQ_AUDIO_MODEL", "whisper-large-v3-turbo")
+    # endpoint. MUST be "whisper-large-v3", not "-turbo" or "distil-whisper-large-v3-en":
+    # transcribe_audio calls Groq's /audio/TRANSLATIONS endpoint specifically (not
+    # /audio/transcriptions), and Groq's hosted translations task only supports the full
+    # whisper-large-v3 model -- the turbo/distilled variants are transcription-only there.
+    # Tried "-turbo" here for a real, wanted latency win (see git history) and it broke
+    # transcription in production ("Transcription failed" on every recording, confirmed live)
+    # -- reverted same-day. If a faster audio path is wanted later, it has to come from
+    # switching endpoints (transcriptions + explicit language handling) or a different
+    # provider/local model, not from swapping the model on this same endpoint.
+    GROQ_AUDIO_MODEL: str = os.getenv("GROQ_AUDIO_MODEL", "whisper-large-v3")
     # Comma-separated list of origins allowed to call the API. The frontend is same-origin
     # (served by this same FastAPI process, API_BASE = '/api'), so this only matters for local
     # dev on a different port/live-server and any future separately-hosted frontend.
