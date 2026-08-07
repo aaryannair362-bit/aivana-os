@@ -73,6 +73,43 @@ def test_transcribe_one_chunk_posts_correct_contract(monkeypatch):
     assert seen["data"] == {"model": "saaras:v3", "mode": "translate", "language_code": "unknown"}
 
 
+@pytest.mark.parametrize("browser_content_type,expected", [
+    ("audio/webm;codecs=opus", "audio/webm"),
+    ("audio/webm; codecs=opus", "audio/webm"),
+    ("audio/mp4;codecs=mp4a.40.2", "audio/mp4"),
+    ("audio/webm", "audio/webm"),
+    ("", ""),
+    (None, None),
+])
+def test_normalize_content_type_strips_codec_parameter(browser_content_type, expected):
+    assert sarvam_transcriber._normalize_content_type(browser_content_type) == expected
+
+
+def test_transcribe_one_chunk_strips_codec_parameter_before_sending(monkeypatch):
+    """
+    Regression test for a real, live-confirmed production bug: Chrome's MediaRecorder
+    produces "audio/webm;codecs=opus" by default (voice-capture.js's MIME_CANDIDATES picks
+    it first), but Sarvam's file-type allowlist matches MIME types exactly and rejects that
+    parameterized form with a 400 "Invalid file type" -- even though the bare "audio/webm" it
+    reduces to IS on Sarvam's own allowlist. Reproduced end-to-end with a real browser
+    (Playwright + Chromium's fake-audio-capture, hitting the live Sarvam API) before this fix;
+    confirmed fixed the same way afterward. This test pins the fix at the unit level so it
+    can't silently regress.
+    """
+    seen = {}
+
+    def _fake_post(url, headers=None, files=None, data=None, timeout=None):
+        seen["files"] = files
+        return _Success("ok")
+
+    monkeypatch.setattr(sarvam_transcriber.requests, "post", _fake_post)
+
+    sarvam_transcriber._transcribe_one_chunk(b"real-webm-bytes", "audio/webm;codecs=opus", "chunk_0.webm")
+
+    _, _, sent_content_type = seen["files"]["file"]
+    assert sent_content_type == "audio/webm"
+
+
 def test_transcribe_one_chunk_strips_whitespace(monkeypatch):
     monkeypatch.setattr(sarvam_transcriber.requests, "post", lambda *a, **k: _Success("  hello there  "))
     assert sarvam_transcriber._transcribe_one_chunk(b"x", "audio/webm", "c.webm") == "hello there"

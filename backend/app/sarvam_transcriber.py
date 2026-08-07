@@ -39,6 +39,21 @@ MAX_RETRIES = 2
 RETRY_DELAY_SEC = 1.0
 
 
+def _normalize_content_type(content_type: str) -> str:
+    """
+    Sarvam's file-type allowlist matches MIME types exactly and does NOT include
+    parameterized variants like "audio/webm;codecs=opus" -- verified live: a real
+    browser-recorded chunk (Chrome's MediaRecorder produces exactly that content-type by
+    default, see voice-capture.js's MIME_CANDIDATES) was rejected with a 400 "Invalid file
+    type: audio/webm;codecs=opus", even though the bare "audio/webm" it reduces to IS on
+    Sarvam's own documented allowlist. Strip any ";parameter" suffix before sending -- the
+    audio bytes/encoding are unaffected, only the declared MIME type string changes.
+    """
+    if not content_type:
+        return content_type
+    return content_type.split(";")[0].strip()
+
+
 def _transcribe_one_chunk(audio_bytes: bytes, content_type: str, filename: str) -> str:
     """
     Translates ONE audio chunk (<=30s -- enforced by Sarvam's API itself, see module
@@ -50,7 +65,7 @@ def _transcribe_one_chunk(audio_bytes: bytes, content_type: str, filename: str) 
         raise ValueError("Sarvam API key not configured. Set SARVAM_API_KEY in environment.")
 
     headers = {"api-subscription-key": settings.SARVAM_API_KEY}
-    files = {"file": (filename, audio_bytes, content_type)}
+    files = {"file": (filename, audio_bytes, _normalize_content_type(content_type))}
     data = {"model": SARVAM_MODEL, "mode": "translate", "language_code": "unknown"}
 
     last_exc = None
