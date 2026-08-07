@@ -29,6 +29,7 @@ from .auth import (
 from .scribe import scribe
 from . import drug_matcher
 from . import lab_test_matcher
+from . import sarvam_transcriber
 from .migrations import run_additive_migrations
 from .tasks_engine import (
     generate_tasks_from_consultation, get_active_medications,
@@ -491,9 +492,30 @@ async def scribe_transcript(request: Request, current_user: dict = Depends(get_c
         logger.error("Scribe error: %s", e)
         raise HTTPException(500, "Internal server error")
 
+@app.get("/api/transcription-provider")
+async def get_transcription_provider(current_user: dict = Depends(get_current_user)):
+    """
+    Lets the frontend decide, at recording-start time, which of the two incompatible
+    recording strategies voice-capture.js needs to use: "whisper" (default) records one
+    continuous blob, uploaded once at stop(); "sarvam" (opt-in via settings.
+    TRANSCRIPTION_PROVIDER) must instead restart MediaRecorder on a rolling ~25s cadence,
+    because Sarvam's REST API enforces a hard 30-second-per-request cap (verified live -- see
+    sarvam_transcriber.py's module docstring). Reading this from settings rather than baking a
+    provider into the frontend keeps the provider swap an env var toggle (see config.py's
+    TRANSCRIPTION_PROVIDER comment), not a frontend code change.
+    """
+    return {"provider": settings.TRANSCRIPTION_PROVIDER}
+
+
+# A real consultation chunked at ~25s/piece stays well under this even for a long visit (30
+# chunks * 25s = 12.5 minutes) -- exists only to reject a degenerate/abusive request (hundreds
+# of tiny files), not to constrain any real recording.
+MAX_AUDIO_CHUNKS = 40
+
+
 @app.post("/api/transcribe-audio")
 async def transcribe_audio_endpoint(
-    request: Request, audio: UploadFile = File(...), current_user: dict = Depends(get_current_user)
+    request: Request, audio: list[UploadFile] = File(...), current_user: dict = Depends(get_current_user)
 ):
     """
     Server-side speech-to-text for all 4 voice-input flows (OPD consult, IPD nursing note,
@@ -502,7 +524,17 @@ async def transcribe_audio_endpoint(
     nonsense (verified live: an actual drug name came out as unrelated English words).
     Stateless -- no DB/patient/org involvement, same shape as /api/clinical-helper -- so no
     role gate beyond authentication, matching /api/scribe.
+
+    `audio` is a LIST (voice-capture.js sends one or more files under the same "audio" form
+    field) to support the provider="sarvam" path, which uploads several <=30s chunks instead
+    of one continuous recording (see get_transcription_provider's docstring for why). The
+    default "whisper" provider only ever receives exactly one file per the frontend's own
+    unmodified recording behavior in that mode, and this deliberately still only reads
+    audio[0] for that path -- so switching TRANSCRIPTION_PROVIDER back to "whisper" can never
+    accidentally pick up multiple files it doesn't know how to handle.
     """
+    if len(audio) > MAX_AUDIO_CHUNKS:
+        raise HTTPException(413, "Too many audio chunks in one request")
     # Fast pre-flight rejection on the declared size before buffering anything, plus a
     # post-read recheck below as defense-in-depth (a missing/spoofed Content-Length under
     # chunked transfer shouldn't be trusted alone).
@@ -510,19 +542,36 @@ async def transcribe_audio_endpoint(
     if content_length and int(content_length) > MAX_AUDIO_UPLOAD_BYTES:
         raise HTTPException(413, "Audio file too large")
     try:
-        data = await audio.read()
-        if not data:
-            raise HTTPException(400, "Empty audio upload")
-        if len(data) > MAX_AUDIO_UPLOAD_BYTES:
-            raise HTTPException(413, "Audio file too large")
-        text = await run_in_threadpool(
-            scribe.transcribe_audio, data, audio.content_type or "audio/webm", audio.filename or "recording.webm"
-        )
+        if settings.TRANSCRIPTION_PROVIDER == "sarvam":
+            chunks = []
+            total_bytes = 0
+            for f in audio:
+                data = await f.read()
+                total_bytes += len(data)
+                if total_bytes > MAX_AUDIO_UPLOAD_BYTES:
+                    raise HTTPException(413, "Audio file too large")
+                if data:  # a rolling-restart chunk can legitimately be empty (e.g. a
+                    # rotation that landed right at stop()) -- skip rather than send Sarvam
+                    # an empty file it would just reject.
+                    chunks.append((data, f.content_type or "audio/webm", f.filename or "chunk.webm"))
+            if not chunks:
+                raise HTTPException(400, "Empty audio upload")
+            text = await run_in_threadpool(sarvam_transcriber.transcribe_chunks, chunks)
+        else:
+            first = audio[0]
+            data = await first.read()
+            if not data:
+                raise HTTPException(400, "Empty audio upload")
+            if len(data) > MAX_AUDIO_UPLOAD_BYTES:
+                raise HTTPException(413, "Audio file too large")
+            text = await run_in_threadpool(
+                scribe.transcribe_audio, data, first.content_type or "audio/webm", first.filename or "recording.webm"
+            )
         return {"transcript": text}
     except HTTPException:
         raise
     except Exception as e:
-        # Same rule as /api/scribe: never echo str(e) back to the client -- a Groq error
+        # Same rule as /api/scribe: never echo str(e) back to the client -- a provider error
         # message can echo request content back, and this response goes straight to the
         # caller, not just a log.
         logger.error("Audio transcription error: %s", e)

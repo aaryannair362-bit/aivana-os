@@ -390,6 +390,7 @@ let isConsulting = false;
 let voiceRecorder = null;
 let usingManualFallback = false;
 let micLevelRAF = null;
+let transcriptionProvider = 'whisper';
 let selectedPatientId = null;
 let currentConsultationId = null;
 let currentPatientName = '';
@@ -497,9 +498,28 @@ async function loadUserInfo() {
         checkGroqStatus();
         loadPatients();
         loadConsultations();
+        loadTranscriptionProvider();
     } else {
         localStorage.clear();
         window.location.href = '/index.html';
+    }
+}
+
+// Fetched once at page load, not per-recording -- avoids adding a round trip before every
+// Start Consult click. Determines which of voice-capture.js's two incompatible recording
+// strategies to use (see its module comment and backend/app/main.py's
+// get_transcription_provider docstring for why they can't share one code path). Falls back to
+// 'whisper' (today's existing behavior) on any failure, so a transient network hiccup here
+// can never block starting a consultation.
+async function loadTranscriptionProvider() {
+    try {
+        const res = await apiRequest('/transcription-provider');
+        if (res.ok) {
+            const data = await res.json();
+            transcriptionProvider = data.provider === 'sarvam' ? 'sarvam' : 'whisper';
+        }
+    } catch (e) {
+        transcriptionProvider = 'whisper';
     }
 }
 
@@ -588,7 +608,7 @@ function driveMicLevelMeter() {
 
 async function startVoiceCapture() {
     usingManualFallback = false;
-    voiceRecorder = createVoiceRecorder({ apiBase: API_BASE, getAuthToken: () => accessToken });
+    voiceRecorder = createVoiceRecorder({ apiBase: API_BASE, getAuthToken: () => accessToken, provider: transcriptionProvider });
     if (!voiceRecorder.isSupported()) {
         usingManualFallback = true;
         setMicStatus('idle', 'Not supported');

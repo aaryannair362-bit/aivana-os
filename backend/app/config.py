@@ -35,6 +35,17 @@ class Settings(BaseSettings):
     # switching endpoints (transcriptions + explicit language handling) or a different
     # provider/local model, not from swapping the model on this same endpoint.
     GROQ_AUDIO_MODEL: str = os.getenv("GROQ_AUDIO_MODEL", "whisper-large-v3")
+    # Sarvam AI's Saaras v3 (sarvam_transcriber.py) -- an alternative audio-transcription
+    # provider, purpose-built and benchmarked for Hindi/English code-switched speech
+    # specifically (verified live before this was added: real API calls against the actual
+    # key, confirmed contract, confirmed latency ~1.4s per <=30s chunk, confirmed the
+    # documented 30-second-per-request cap with a real 400 response). Opt-in via
+    # TRANSCRIPTION_PROVIDER, not a replacement of GROQ_AUDIO_MODEL's default -- "whisper"
+    # keeps today's exact, unchanged, working behavior; "sarvam" is the new path, meant to be
+    # A/B'd against it before ever becoming the default (same reasoning as GROQ_MODEL/
+    # GROQ_AUDIO_MODEL above: a provider swap is a Render env var toggle, not a code deploy).
+    SARVAM_API_KEY: str = os.getenv("SARVAM_API_KEY", "")
+    TRANSCRIPTION_PROVIDER: str = os.getenv("TRANSCRIPTION_PROVIDER", "whisper")
     # Comma-separated list of origins allowed to call the API. The frontend is same-origin
     # (served by this same FastAPI process, API_BASE = '/api'), so this only matters for local
     # dev on a different port/live-server and any future separately-hosted frontend.
