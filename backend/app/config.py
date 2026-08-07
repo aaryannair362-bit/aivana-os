@@ -11,7 +11,13 @@ class Settings(BaseSettings):
     # Higher-limit developer-tier key, kept as a separate .env entry rather than overwriting
     # GROQ_API_KEY directly so the original key stays available/documented as a fallback.
     GROQ_API_KEY_Prod: str = os.getenv("GROQ_API_KEY_Prod", "")
-    GROQ_MODEL: str = "qwen/qwen3.6-27b"
+    # Env-overridable (not hardcoded) so a model swap -- e.g. trading this reasoning-capable
+    # model's hidden-chain-of-thought latency (see scribe.py's reasoning_format handling) for a
+    # faster non-reasoning one -- is a Render dashboard env var edit, not a code deploy. Learned
+    # the hard way: GROQ_AUDIO_MODEL wasn't overridable this way either when it was changed
+    # in-code, which turned one wrong model guess into a broken-production-and-redeploy cycle
+    # instead of a five-second toggle back.
+    GROQ_MODEL: str = os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b")
     # Whisper model used for POST /api/transcribe-audio (see scribe.py's transcribe_audio) --
     # a separate setting from GROQ_MODEL since it's a different model for a different Groq
     # endpoint. MUST be "whisper-large-v3", not "-turbo" or "distil-whisper-large-v3-en":
